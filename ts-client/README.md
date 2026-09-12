@@ -1,54 +1,40 @@
 # ts-client
 
-TypeScript client that drives a full **PotLuck** ROSCA lifecycle against a
-deployed stack — it plays the role of the app so the whole mechanic is proven
-on-chain before any frontend exists.
+TypeScript client that drives a full **PotLuck** ROSCA lifecycle against the
+live Sepolia stack — it plays the role of the app so the whole mechanic is
+proven on-chain before any frontend exists.
 
-`src/flow.ts` does, end to end:
+`src/flow.ts` walks these sections end to end:
 
-1. create a pool via `ROSCAFactory`
-2. mint mock USDC to three members, each `join()`s (the third join locks the
-   pool; the dev-shuffle picks a random payout order and starts round 1)
-3. run every round — each member `contribute()`s, the window closes, anyone
-   `settleRound()`s and the full pot rotates to that round's member
-4. read back on-chain reputation (`cleanCycles`, `hasDefaulted`) per member
+1. **SETUP** — connect the four wallets (creator + 3 members) and the deployed
+   contracts.
+2. **CREATE POOL** — creator calls `ROSCAFactory.createPool(...)` with a short
+   period/window so the demo settles in one run.
+3. **FUND + JOIN** — each member mints mock USDC, `approve()`s the pool, and
+   `join()`s. The third join locks the pool; the dev-shuffle picks the payout
+   order and starts round 1.
+4. **ROUNDS** — every round each member `contribute()`s, the script waits out
+   the contribution window, then the creator `settleRound()`s and the full pot
+   rotates to that round's member.
+5. **REPUTATION** — read back `cleanCycles` / `hasDefaulted` per member.
 
-Members bring their **own wallets and their own gas** — you supply their three
-private keys (`MEMBER1_KEY`/`MEMBER2_KEY`/`MEMBER3_KEY`) so the client can sign
-each member's `join`/`approve`/`contribute`. The client never sends them ETH;
-if a member has no gas the run stops with a clear error. The funder key only
-creates the pool, mints the mock USDC, and settles rounds.
+Every wallet is an explicit named key in `.env` and must **already hold Sepolia
+ETH for gas** — the script never sends ETH. mUSDC comes from the MockUSDC
+faucet/mint.
 
-On a local `anvil` node (chainId 31337) it fast-forwards time so the whole
-cycle runs in seconds. On a live network it waits out the real window, so
-deploy the demo pool with short `period`/`window` values.
-
-## Run against anvil
+## Run
 
 ```bash
-# 1. start a node
-anvil
-
-# 2. deploy the stack (from repo root) and note the printed addresses
-PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-  forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --broadcast
-
-# 3. run the flow
 cd ts-client
+cp ../.env.example .env    # fill in the four keys + deployed addresses
 npm install
-RPC_URL=http://127.0.0.1:8545 \
-FUNDER_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-USDC_ADDRESS=... FACTORY_ADDRESS=... REGISTRY_ADDRESS=... \
-  npm run flow
+npm run flow
 ```
 
-## Run against Sepolia
-
-Deploy with short window/period (so the demo doesn't wait 12h), fund each of
-the three **member** wallets with a little Sepolia ETH for gas, then set the
-env vars: `RPC_URL`, `FUNDER_KEY`, the deployed addresses, `MEMBER1_KEY`..
-`MEMBER3_KEY`, plus `PERIOD_SECONDS` / `WINDOW_SECONDS`. See `.env.example` in
-the repo root.
+The `.env` values you need: `SEPOLIA_RPC_URL`, `CREATOR_PRIVATE_KEY`,
+`MEMBER1_PRIVATE_KEY`..`MEMBER3_PRIVATE_KEY`, and the deployed
+`TOKEN_ADDRESS` / `FACTORY_ADDRESS` / `REGISTRY_ADDRESS`. Optionally override
+`PERIOD_SECONDS` / `WINDOW_SECONDS` / `CONTRIBUTION`.
 
 ## npm registry
 
