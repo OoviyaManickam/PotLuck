@@ -53,6 +53,7 @@ const CREATOR_PRIVATE_KEY = env("CREATOR_PRIVATE_KEY");
 const MEMBER1_PRIVATE_KEY = env("MEMBER1_PRIVATE_KEY");
 const MEMBER2_PRIVATE_KEY = env("MEMBER2_PRIVATE_KEY");
 const MEMBER3_PRIVATE_KEY = env("MEMBER3_PRIVATE_KEY");
+const MEMBER4_PRIVATE_KEY = env("MEMBER4_PRIVATE_KEY");
 const TOKEN_ADDRESS = env("TOKEN_ADDRESS");
 const FACTORY_ADDRESS = env("FACTORY_ADDRESS");
 const REGISTRY_ADDRESS = env("REGISTRY_ADDRESS");
@@ -99,6 +100,7 @@ async function main() {
     new Wallet(MEMBER1_PRIVATE_KEY, provider),
     new Wallet(MEMBER2_PRIVATE_KEY, provider),
     new Wallet(MEMBER3_PRIVATE_KEY, provider),
+    new Wallet(MEMBER4_PRIVATE_KEY, provider),
   ];
   const N = members.length;
 
@@ -158,16 +160,30 @@ async function main() {
   }
 
   const order = (await poolRead.getPayoutOrder()) as bigint[];
-  console.log(`  Pool locked. Payout order: [${order.join(", ")}], round ${await poolRead.currentRound()}.`);
+  console.log(`  Pool locked. Payout order (member slots): [${order.join(", ")}], round ${await poolRead.currentRound()}.`);
+
+  // Slash beat: the member scheduled to win the LAST round deliberately skips their
+  // round-1 contribution. Collateral (2x contribution at N=4) absorbs one slash, so they
+  // stay active and still win their round later — but they're flagged as having defaulted.
+  const slackerSlot = Number(order[order.length - 1]);
+  const slashRound = 1;
+  console.log(
+    `  DEMO: Member (slot ${slackerSlot}) ${members[slackerSlot].address} will skip round ${slashRound} to show a slash.`,
+  );
 
   section("ROUNDS");
   for (let round = 1; round <= N; round++) {
     console.log(`\n  --- Round ${round} ---`);
     for (let i = 0; i < N; i++) {
+      if (round === slashRound && i === slackerSlot) {
+        console.log(`  Member (slot ${i}) SKIPS this round's contribution (demo slash).`);
+        continue;
+      }
       const ctx = await (new Contract(poolAddr, POOL_ABI, members[i])).getFunction("contribute")();
       await ctx.wait();
     }
-    console.log(`  All ${N} members contributed.`);
+    const contributed = round === slashRound ? N - 1 : N;
+    console.log(`  ${contributed}/${N} members contributed.`);
 
     const windowEndsAt = Number(await poolRead.windowEndsAt());
     const waitS = windowEndsAt - Math.floor(Date.now() / 1000) + 3;
@@ -180,6 +196,9 @@ async function main() {
     await stx.wait();
     const winner = members[Number(order[round - 1])];
     console.log(`  Round ${round} settled — pot paid to Member (slot ${order[round - 1]}) ${winner.address} — ${stx.hash}`);
+    if (round === slashRound) {
+      console.log(`  Member (slot ${slackerSlot}) was slashed one contribution and flagged as defaulted (still active).`);
+    }
   }
 
   const StatusNames = ["OPEN", "LOCKED", "ROUND_ACTIVE", "COMPLETE", "CANCELLED"];

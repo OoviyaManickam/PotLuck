@@ -74,6 +74,34 @@ contract ROSCAPoolTest is Test {
         token.approve(address(pool), type(uint256).max);
     }
 
+    // N=4 pool: pot 40, collateral 20 each. Collateral covers 2 slashes, so a member
+    // who misses ONE round is slashed one contribution (20 -> 10) and stays active
+    // (10 >= one contribution). This is the demo's "one miss, slashed, stays in" path.
+    function _newPool4() internal returns (ROSCAPoolHarness pool, address[4] memory who) {
+        ROSCAPool.InitParams memory p = ROSCAPool.InitParams({
+            poolId: 2,
+            creator: alice,
+            token: address(token),
+            identityGate: address(gate),
+            reputation: address(registry),
+            treasury: treasury,
+            contribution: CONTRIB,
+            memberCount: 4,
+            periodSeconds: PERIOD,
+            windowSeconds: WINDOW,
+            minScore: 0,
+            acceptDefaulted: true,
+            inviteOnly: false
+        });
+        pool = new ROSCAPoolHarness(p);
+        registry.authorizePool(address(pool));
+        who = [alice, bob, carol, makeAddr("dave")];
+        uint256 need = (CONTRIB * 4) / 2 + CONTRIB * 4; // collateral(20) + 4 rounds(40)
+        for (uint256 i = 0; i < 4; i++) {
+            _fundApprove(pool, who[i], need);
+        }
+    }
+
     // --------------------------------------------------------------------
     // join / lock
     // --------------------------------------------------------------------
@@ -271,5 +299,104 @@ contract ROSCAPoolTest is Test {
         vm.prank(dave);
         vm.expectRevert(ROSCAPool.NotAMember.selector);
         pool.contribute();
+    }
+
+    // --------------------------------------------------------------------
+    // slash-path correctness (demo-critical)
+    // --------------------------------------------------------------------
+
+    /// @notice One miss in an N=4 pool: slashed one contribution, but stays ACTIVE
+    ///         (collateral 20 -> 10, still >= one contribution). The demo path.
+    function test_OneMissSlashedStaysActive() public {
+        (ROSCAPoolHarness pool, address[4] memory who) = _newPool4();
+        pool.setSeed(7);
+        for (uint256 i = 0; i < 4; i++) {
+            _join(pool, who[i]);
+        }
+
+        // Round 1: everyone pays except dave (slot 3).
+        for (uint256 i = 0; i < 3; i++) {
+            vm.prank(who[i]);
+            pool.contribute();
+        }
+        uint256 daveSlot = pool.slotOfPlusOne(who[3]) - 1;
+        uint256 collBefore = pool.getMember(daveSlot).collateral;
+        assertEq(collBefore, (CONTRIB * 4) / 2, "collateral = 20");
+
+        vm.warp(block.timestamp + WINDOW + 1);
+        pool.settleRound();
+
+        ROSCAPool.Member memory dave = pool.getMember(daveSlot);
+        assertEq(dave.collateral, collBefore - CONTRIB, "slashed exactly one contribution");
+        assertTrue(dave.active, "still active after one miss");
+        assertTrue(dave.defaultedThisCycle, "flagged this cycle");
+        assertTrue(registry.hasDefaulted(keccak256(abi.encode(who[3]))), "permanent default flag");
+    }
+
+    /// @notice When defaults leave the pool short of a full pot, the winner is paid what the
+    ///         pool can cover (capped at pot) and settleRound never reverts. #3 fix.
+    function test_PayoutCappedAtBalance() public {
+        (ROSCAPoolHarness pool, address[4] memory who) = _newPool4();
+        pool.setSeed(7);
+        for (uint256 i = 0; i < 4; i++) {
+            _join(pool, who[i]);
+        }
+
+        // Round 1: only the scheduled winner pays; the other three all miss.
+        uint8 winnerSlot = pool.getPayoutOrder()[0];
+        address winner = pool.getMember(winnerSlot).wallet;
+        vm.prank(winner);
+        pool.contribute();
+
+        uint256 balBefore = token.balanceOf(address(pool));
+        uint256 winnerBalBefore = token.balanceOf(winner);
+
+        vm.warp(block.timestamp + WINDOW + 1);
+        pool.settleRound(); // must not revert even though contributions < pot
+
+        // Winner received at most the pot, and no more than the pool actually held.
+        uint256 paid = token.balanceOf(winner) - winnerBalBefore;
+        assertLe(paid, pool.pot(), "never overpays the pot");
+        assertLe(paid, balBefore, "never overdraws the pool");
+        assertGt(paid, 0, "winner still paid something");
+    }
+
+    /// @notice A member ejected earlier must NOT receive a pot if scheduled to win a later
+    ///         round; those funds stay in the pool. #2 fix. Uses a small pool where one
+    ///         member never pays and is ejected, then checks no pot lands on an inactive slot.
+    function test_EjectedMemberNotPaid() public {
+        (ROSCAPoolHarness pool, address[4] memory who) = _newPool4();
+        pool.setSeed(7);
+        for (uint256 i = 0; i < 4; i++) {
+            _join(pool, who[i]);
+        }
+
+        uint8[] memory order = pool.getPayoutOrder();
+
+        // Pick a target slot that wins in a LATER round (round index >= 1), and have that
+        // member never contribute so they are slashed twice (20 -> 0) and ejected before
+        // their payout round arrives.
+        uint8 targetSlot = order[order.length - 1]; // wins the final round
+        address target = pool.getMember(targetSlot).wallet;
+
+        for (uint8 r = 1; r <= 4; r++) {
+            // everyone except the target pays every round
+            for (uint256 i = 0; i < 4; i++) {
+                if (who[i] == target) continue;
+                // an ejected member can't contribute anyway; guard on active
+                if (!pool.getMember(pool.slotOfPlusOne(who[i]) - 1).active) continue;
+                vm.prank(who[i]);
+                pool.contribute();
+            }
+            uint256 targetBalBefore = token.balanceOf(target);
+            vm.warp(block.timestamp + WINDOW + 1);
+            pool.settleRound();
+
+            if (r == 4) {
+                // Final round is the target's payout round, but they were ejected earlier.
+                assertFalse(pool.getMember(targetSlot).active, "target ejected before payout");
+                assertEq(token.balanceOf(target), targetBalBefore, "ejected member received no pot");
+            }
+        }
     }
 }

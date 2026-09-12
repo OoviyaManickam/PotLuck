@@ -274,12 +274,22 @@ contract ROSCAPool {
             }
         }
 
-        // 2. Pay the winner the full pot (funded by contributions + slashed collateral).
+        // 2. Pay the winner the full pot, funded by contributions + slashed collateral.
+        //    Two safety rails so a defaulting cycle can never revert or overdraw:
+        //    - Skip payout entirely if this round's scheduled winner was ejected (inactive);
+        //      an ejected defaulter must not receive a pot. The funds stay in the pool and
+        //      roll into final settlement (returned as collateral refunds / swept to treasury).
+        //    - Cap the transfer at the contract's actual balance (never > pot). If defaults
+        //      left contributions short, the winner receives what the pool can cover.
         uint256 winnerSlot = payoutOrder[round - 1];
         Member storage winner = members[winnerSlot];
-        winner.hasReceivedPot = true;
-        token.safeTransfer(winner.wallet, pot);
-        emit PotPaid(poolId, round, winnerSlot, pot);
+        if (winner.active) {
+            winner.hasReceivedPot = true;
+            uint256 bal = token.balanceOf(address(this));
+            uint256 payAmount = pot > bal ? bal : pot;
+            if (payAmount > 0) token.safeTransfer(winner.wallet, payAmount);
+            emit PotPaid(poolId, round, winnerSlot, payAmount);
+        }
 
         // 3. Advance or complete.
         if (round < memberCount) {
