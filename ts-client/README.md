@@ -13,6 +13,12 @@ on-chain before any frontend exists.
    `settleRound()`s and the full pot rotates to that round's member
 4. read back on-chain reputation (`cleanCycles`, `hasDefaulted`) per member
 
+Members bring their **own wallets and their own gas** — you supply their three
+private keys (`MEMBER1_KEY`/`MEMBER2_KEY`/`MEMBER3_KEY`) so the client can sign
+each member's `join`/`approve`/`contribute`. The client never sends them ETH;
+if a member has no gas the run stops with a clear error. The funder key only
+creates the pool, mints the mock USDC, and settles rounds.
+
 On a local `anvil` node (chainId 31337) it fast-forwards time so the whole
 cycle runs in seconds. On a live network it waits out the real window, so
 deploy the demo pool with short `period`/`window` values.
@@ -38,9 +44,11 @@ USDC_ADDRESS=... FACTORY_ADDRESS=... REGISTRY_ADDRESS=... \
 
 ## Run against Sepolia
 
-Deploy with short window/period (so the demo doesn't wait 12h), fund the
-`FUNDER_KEY` account with Sepolia ETH, then set the same env vars plus
-`PERIOD_SECONDS` / `WINDOW_SECONDS`. See `.env.example` in the repo root.
+Deploy with short window/period (so the demo doesn't wait 12h), fund each of
+the three **member** wallets with a little Sepolia ETH for gas, then set the
+env vars: `RPC_URL`, `FUNDER_KEY`, the deployed addresses, `MEMBER1_KEY`..
+`MEMBER3_KEY`, plus `PERIOD_SECONDS` / `WINDOW_SECONDS`. See `.env.example` in
+the repo root.
 
 ## npm registry
 

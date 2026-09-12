@@ -13,12 +13,15 @@
  *
  * Required env (see .env.example):
  *   RPC_URL            JSON-RPC endpoint (default http://127.0.0.1:8545)
- *   FUNDER_KEY         key that owns ETH + can mint MockUSDC (anvil acct #0 default)
+ *   FUNDER_KEY         key that creates the pool + mints MockUSDC + settles rounds
+ *                      (anvil acct #0 default)
  *   FACTORY_ADDRESS    ROSCAFactory
  *   REGISTRY_ADDRESS   ReputationRegistry
  *   USDC_ADDRESS       MockUSDC
+ *   MEMBER1_KEY..MEMBER3_KEY  the three members' keys. Members bring their OWN
+ *                      gas ETH; the client does not fund them. On anvil these
+ *                      fall back to the node's pre-funded default accounts.
  * Optional:
- *   MEMBER1_KEY..MEMBER3_KEY  member keys; generated + gas-funded if unset
  *   CONTRIBUTION       per-round amount in 6-dec base units (default 10_000_000 = 10 mUSDC)
  *   PERIOD_SECONDS     round length (default 120 on anvil, else must be set)
  *   WINDOW_SECONDS     contribution window (default 60 on anvil, else must be set)
@@ -34,7 +37,6 @@ import {
   AbiCoder,
   getAddress,
   NonceManager,
-  type HDNodeWallet,
 } from "ethers";
 
 // ---- minimal ABIs (only what the flow touches) ---------------------------
@@ -106,7 +108,6 @@ async function main() {
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
   const funderWallet = new Wallet(funderKey, provider);
   const funder = new NonceManager(funderWallet);
-  const funderAddr = funderWallet.address;
 
   const factory = new Contract(need("FACTORY_ADDRESS"), FACTORY_ABI, funder);
   const usdc = new Contract(need("USDC_ADDRESS"), USDC_ABI, funder);
@@ -118,24 +119,32 @@ async function main() {
   if (!period || !window) throw new Error("set PERIOD_SECONDS and WINDOW_SECONDS on live networks");
 
   // --- members ------------------------------------------------------------
-  const memberKeys = [
-    process.env.MEMBER1_KEY,
-    process.env.MEMBER2_KEY,
-    process.env.MEMBER3_KEY,
+  // Members bring their own wallets (and their own gas). You supply their keys
+  // so the client can sign each member's join/approve/contribute. On a live
+  // network all three keys are required; on anvil they fall back to the node's
+  // pre-funded default accounts for a zero-cost local run.
+  const ANVIL_KEYS = [
+    "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", // acct #1
+    "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // acct #2
+    "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6", // acct #3
   ];
-  const members: (Wallet | HDNodeWallet)[] = memberKeys.map((k) =>
-    k ? new Wallet(k, provider) : Wallet.createRandom().connect(provider),
-  );
+  const memberKeys = [
+    process.env.MEMBER1_KEY ?? (isAnvil ? ANVIL_KEYS[0] : undefined),
+    process.env.MEMBER2_KEY ?? (isAnvil ? ANVIL_KEYS[1] : undefined),
+    process.env.MEMBER3_KEY ?? (isAnvil ? ANVIL_KEYS[2] : undefined),
+  ];
+  if (memberKeys.some((k) => !k)) {
+    throw new Error("set MEMBER1_KEY, MEMBER2_KEY and MEMBER3_KEY (each member funds their own gas)");
+  }
+  const members: Wallet[] = memberKeys.map((k) => new Wallet(k as string, provider));
   const N = members.length;
   log("members", members.map((m) => m.address).join(", "));
 
-  // fund each member with a little gas ETH if they have none.
+  // Members must already hold ETH for gas — the client does NOT fund them.
   for (const m of members) {
     const bal = await provider.getBalance(m.address);
     if (bal === 0n) {
-      const gasTop = isAnvil ? parseUnits("10", 18) : parseUnits("0.01", 18);
-      await (await funder.sendTransaction({ to: m.address, value: gasTop })).wait();
-      log("fund", `sent gas ETH to ${m.address}`);
+      throw new Error(`member ${m.address} has no ETH for gas — fund it before running the flow`);
     }
   }
 
