@@ -185,10 +185,15 @@ async function main() {
     const contributed = round === slashRound ? N - 1 : N;
     console.log(`  ${contributed}/${N} members contributed.`);
 
+    // settleRound reverts with NotYetTimeToAdvance while block.timestamp <= windowEndsAt.
+    // Sepolia block timestamps drift from wall-clock, so don't trust Date.now(): poll the
+    // chain's own latest-block timestamp and only settle once it has actually passed the window.
     const windowEndsAt = Number(await poolRead.windowEndsAt());
-    const waitS = windowEndsAt - Math.floor(Date.now() / 1000) + 3;
-    if (waitS > 0) {
-      console.log(`  Waiting ${waitS}s for the contribution window to close...`);
+    for (;;) {
+      const chainNow = Number((await provider.getBlock("latest"))!.timestamp);
+      if (chainNow > windowEndsAt) break;
+      const waitS = windowEndsAt - chainNow + 2;
+      console.log(`  Window closes at ${windowEndsAt}, chain is at ${chainNow} — waiting ${waitS}s...`);
       await sleep(waitS * 1000);
     }
 
