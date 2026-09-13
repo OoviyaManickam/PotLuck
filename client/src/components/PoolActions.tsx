@@ -7,6 +7,7 @@ import { useApproveAndContribute } from '@/hooks/useApproveAndContribute';
 import { useApproveAndJoin } from '@/hooks/useApproveAndJoin';
 import { useToast } from '@/components/TxToast';
 import { PillButton } from '@/components/PillButton';
+import { WindowCountdown } from '@/components/WindowCountdown';
 import { SEPOLIA_CHAIN_ID } from '@/lib/contracts';
 import { formatUsdc } from '@/lib/format';
 import { poolAbi } from '@/lib/abis/pool';
@@ -32,7 +33,26 @@ export function PoolActions({ pool, poolAddr, refetch }: Props) {
     creator,
     contribution,
     collateralReq,
+    windowEndsAt,
   } = pool;
+
+  // Ticking clock (1s) so the Settle gate re-enables live the moment the
+  // contribution window closes, without a refetch. Only relevant during
+  // ROUND_ACTIVE; harmless otherwise.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (status !== PoolStatus.ROUND_ACTIVE) return;
+    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [status]);
+
+  // The window is still open (contributions allowed, settle not yet callable)
+  // when we're ROUND_ACTIVE and now is at/before windowEndsAt. LOCKED has no
+  // window yet, so it's never "window-open" for settle purposes.
+  const windowStillOpen =
+    status === PoolStatus.ROUND_ACTIVE &&
+    windowEndsAt > 0n &&
+    nowSec <= Number(windowEndsAt);
 
   const isMember = mySlotPlusOne > 0n;
   const isCreator = wallet && creator.toLowerCase() === wallet.toLowerCase();
@@ -171,6 +191,10 @@ export function PoolActions({ pool, poolAddr, refetch }: Props) {
   const canSettle =
     onSepoliaAndConnected &&
     (status === PoolStatus.ROUND_ACTIVE || status === PoolStatus.LOCKED) &&
+    // The contract reverts settleRound() with NotYetTimeToAdvance until the
+    // window closes. Don't let the user click into that revert — only enable
+    // once the window has actually elapsed. (LOCKED has no open window.)
+    !windowStillOpen &&
     settleTx.status === 'idle';
 
   const canCancel =
@@ -208,6 +232,11 @@ export function PoolActions({ pool, poolAddr, refetch }: Props) {
   return (
     <section className="rounded-2xl border border-surface-2 bg-surface p-6 flex flex-col gap-3">
       <h2 className="text-base font-semibold text-text">Actions</h2>
+
+      {/* Live contribution-window status — tells the user when contributions
+          are open and, once it closes, that the round is ready to settle. */}
+      <WindowCountdown windowEndsAt={windowEndsAt} status={status} />
+
       <div className="flex flex-wrap gap-3">
         {/* Join */}
         {status === PoolStatus.OPEN && !isMember && (
@@ -248,6 +277,11 @@ export function PoolActions({ pool, poolAddr, refetch }: Props) {
             variant="dark"
             onClick={handleSettle}
             disabled={!canSettle}
+            title={
+              windowStillOpen
+                ? `Can settle once the contribution window closes (${Math.max(0, Number(windowEndsAt) - nowSec)}s left)`
+                : undefined
+            }
           >
             {settleTx.status === 'pending' || settleTx.status === 'confirming' ? 'Settling…' : 'Settle Round'}
           </PillButton>
