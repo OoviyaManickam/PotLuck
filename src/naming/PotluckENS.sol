@@ -112,6 +112,11 @@ contract PotluckENS is IPoolNaming, INameKey {
         return string.concat("pool", _u(poolId));
     }
 
+    /// @notice Public accessor for the member label, so tooling/tests can build the DNS name.
+    function memberLabelExternal(address member) external pure returns (string memory) {
+        return _memberLabel(member);
+    }
+
     /// @notice Member label = lowercase hex of the address (deterministic, collision-free).
     function _memberLabel(address member) internal pure returns (string memory) {
         return _toHexString(member);
