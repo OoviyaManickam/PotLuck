@@ -1,25 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useAccount } from 'wagmi';
 import { LogoIcon } from './LogoIcon';
 import { ConnectButton } from './ConnectButton';
-import { MintUsdcButton } from './MintUsdcButton';
-import { useUsdcBalance } from '@/hooks/useUsdcBalance';
-
-function BalanceDisplay() {
-  const { address } = useAccount();
-  const { formatted } = useUsdcBalance(address);
-
-  if (!address) return null;
-
-  return (
-    <span className="text-sm text-text-muted">
-      <span className="text-text font-medium">{formatted}</span>{' '}
-      <span className="text-xs">mUSDC</span>
-    </span>
-  );
-}
 
 export function Navbar() {
   return (
@@ -33,20 +16,17 @@ export function Navbar() {
         <span className="font-bold text-lg tracking-tight">PotLuck</span>
       </Link>
 
-      {/* Center — decorative nav links */}
-      <div className="hidden md:flex items-center gap-6 text-sm text-text-muted">
-        <Link href="/pools" className="hover:text-text transition-colors">
-          Pools
-        </Link>
-        <Link href="/pools" className="hover:text-text transition-colors">
-          Create Pool
-        </Link>
-      </div>
-
-      {/* Right — balance + mint + connect */}
-      <div className="flex items-center gap-3">
-        <BalanceDisplay />
-        <MintUsdcButton />
+      {/* Right — nav links grouped next to wallet connect
+          (balance + mint live on the page itself) */}
+      <div className="flex items-center gap-6">
+        <div className="hidden md:flex items-center gap-6 text-sm text-text-muted">
+          <Link href="/pools" className="hover:text-text transition-colors">
+            Pools
+          </Link>
+          <Link href="/profile" className="hover:text-text transition-colors">
+            Profile
+          </Link>
+        </div>
         <ConnectButton />
       </div>
     </nav>

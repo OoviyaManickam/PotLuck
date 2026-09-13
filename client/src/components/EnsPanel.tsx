@@ -4,10 +4,8 @@ import { useEffect, useState } from 'react';
 import { useAccount, usePublicClient } from 'wagmi';
 import { usePools } from '@/hooks/usePools';
 import { usePool } from '@/hooks/usePool';
-import { useReputation } from '@/hooks/useReputation';
 import {
   intendedMemberName,
-  intendedPoolName,
   memberEnsLabel,
   resolveReputationViaEns,
   parseReputationText,
@@ -28,36 +26,54 @@ interface EnsResolution {
 /** Resolve ENS for a single member in a single pool. */
 function useEnsResolution(
   walletAddress: `0x${string}` | undefined,
-  pool: PoolSummary | undefined,
-  idKey: `0x${string}` | undefined
+  pool: PoolSummary | undefined
 ): EnsResolution | null {
   const client = usePublicClient();
   const [resolution, setResolution] = useState<EnsResolution | null>(null);
 
+  const poolAddress = pool?.address;
+  const poolIdStr = pool?.poolId.toString();
+
   useEffect(() => {
-    if (!walletAddress || !pool || !client) return;
+    let cancelled = false;
+
+    if (!walletAddress || !pool || !client) {
+      // Clear asynchronously — a synchronous setState in an effect body
+      // triggers cascading renders.
+      Promise.resolve().then(() => {
+        if (!cancelled) setResolution(null);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     // Build the intended ENS name using the address-hex label convention
     const label = memberEnsLabel(walletAddress); // lowercase hex incl. 0x, matches PotluckENS._memberLabel
     const ensName = intendedMemberName(label, pool.poolId);
+    const poolAddress = pool.address;
+    const poolId = pool.poolId;
 
-    setResolution({
-      ensName,
-      poolAddress: pool.address,
-      poolId: pool.poolId,
-      reputationText: null,
-      parsed: null,
-      loading: true,
+    // Loading state + resolution both set asynchronously (never synchronously
+    // in the effect body — that triggers cascading renders).
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setResolution({
+        ensName,
+        poolAddress,
+        poolId,
+        reputationText: null,
+        parsed: null,
+        loading: true,
+      });
     });
-
-    let cancelled = false;
 
     resolveReputationViaEns(client, ensName).then((text) => {
       if (cancelled) return;
       setResolution({
         ensName,
-        poolAddress: pool.address,
-        poolId: pool.poolId,
+        poolAddress,
+        poolId,
         reputationText: text,
         parsed: text ? parseReputationText(text) : null,
         loading: false,
@@ -67,40 +83,52 @@ function useEnsResolution(
     return () => {
       cancelled = true;
     };
-  }, [walletAddress, pool?.address, pool?.poolId.toString(), client]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletAddress, poolAddress, poolIdStr, client]);
 
   return resolution;
 }
 
 /**
- * Inner panel that needs idKey (from member data) + the pool.
+ * Inner panel — renders ENS data for one membership.
+ *
+ * BOUNTY-CRITICAL: this panel shows ENS names and reputation ONLY when they
+ * genuinely resolve live through the UniversalResolver. We never print a
+ * string-constructed name as if it were a fact, and we never show
+ * ReputationRegistry values dressed up as ENS data. If resolution fails, the
+ * member is simply omitted (return null) — honest ENS or nothing.
  */
 function EnsPanelInner({
   walletAddress,
   pool,
-  idKey,
 }: {
   walletAddress: `0x${string}`;
   pool: PoolSummary;
-  idKey: `0x${string}`;
 }) {
-  const rep = useReputation(idKey);
-  const ens = useEnsResolution(walletAddress, pool, idKey);
-  const poolEnsName = intendedPoolName(pool.poolId);
-  const memberEnsName = ens?.ensName ?? intendedMemberName(memberEnsLabel(walletAddress), pool.poolId);
+  const ens = useEnsResolution(walletAddress, pool);
 
   const isLive = ens && !ens.loading && ens.reputationText !== null;
-  const isFallback = !ens?.loading && !isLive;
 
+  // Still resolving — neutral status, no name shown yet.
+  if (ens?.loading || !ens) {
+    return (
+      <div className="rounded-xl border border-surface-2 bg-surface-2/30 p-4">
+        <p className="text-xs text-text-muted animate-pulse">Resolving via ENS…</p>
+      </div>
+    );
+  }
+
+  // Not resolvable — omit entirely. We do NOT print the constructed name or any
+  // registry fallback here; an unresolved name is not an ENS fact.
+  if (!isLive) return null;
+
+  // Live-resolved: the name below came BACK from the resolver, not a template.
   return (
     <div className="space-y-4">
-      {/* Names */}
+      {/* Names — only shown because they resolved live */}
       <div className="space-y-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-text-muted font-medium uppercase tracking-wide">Member name</span>
-        </div>
-        <p className="font-mono text-sm text-text break-all">{memberEnsName}</p>
-        <p className="font-mono text-xs text-text-muted break-all">{poolEnsName}</p>
+        <span className="text-xs text-text-muted font-medium uppercase tracking-wide">Member name</span>
+        <p className="font-mono text-sm text-text break-all">{ens.ensName}</p>
       </div>
 
       {/* Resolver note */}
@@ -112,68 +140,38 @@ function EnsPanelInner({
         {' (UniversalResolverV2, Sepolia)'}
       </div>
 
-      {/* Resolution status */}
-      {ens?.loading && (
-        <div className="rounded-xl border border-surface-2 bg-surface-2/30 p-4">
-          <p className="text-xs text-text-muted animate-pulse">Attempting ENS resolution…</p>
-        </div>
-      )}
-
-      {isLive && ens && (
-        <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-green-400" />
-            <p className="text-sm font-semibold text-green-300">
-              Resolved live via ENS ✓ (UniversalResolverV2)
-            </p>
-          </div>
-          {ens.parsed && (
-            <div className="space-y-1 text-xs text-text-muted">
-              {ens.parsed.tier !== undefined && (
-                <p>Tier: <span className="text-text font-medium">{ens.parsed.tier}</span></p>
-              )}
-              {ens.parsed.cleanCycles !== undefined && (
-                <p>Clean cycles: <span className="text-text font-medium">{ens.parsed.cleanCycles}</span></p>
-              )}
-              {ens.parsed.defaulted !== undefined && (
-                <p>Defaulted: <span className="text-text font-medium">{ens.parsed.defaulted ? 'Yes' : 'No'}</span></p>
-              )}
-              {ens.parsed.raw && (
-                <p className="font-mono break-all">{ens.parsed.raw}</p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {isFallback && (
-        <div className="rounded-xl border border-surface-2 bg-surface-2/30 p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-yellow-400" />
-            <p className="text-xs text-yellow-300 font-medium">
-              ENS name not minted yet — resolves live once this pool is created under the live adapter
-            </p>
-          </div>
-          <p className="text-xs text-text-muted">
-            Showing on-chain registry value (ReputationRegistry contract):
+      <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-green-400" />
+          <p className="text-sm font-semibold text-green-300">
+            Resolved live via ENS ✓ (UniversalResolverV2)
           </p>
-          {rep.isLoading ? (
-            <div className="animate-pulse h-4 w-32 rounded bg-surface-2" />
-          ) : (
-            <div className="space-y-1 text-xs text-text-muted">
-              <p>Tier: <span className="text-text font-medium">{rep.tierLabel}</span></p>
-              <p>Clean cycles: <span className="text-text font-medium">{rep.cleanCycles}</span></p>
-              <p>Defaulted: <span className="text-text font-medium">{rep.hasDefaulted ? 'Yes' : 'No'}</span></p>
-            </div>
-          )}
         </div>
-      )}
+        {ens.parsed && (
+          <div className="space-y-1 text-xs text-text-muted">
+            {ens.parsed.tier !== undefined && (
+              <p>Tier: <span className="text-text font-medium">{ens.parsed.tier}</span></p>
+            )}
+            {ens.parsed.cleanCycles !== undefined && (
+              <p>Clean cycles: <span className="text-text font-medium">{ens.parsed.cleanCycles}</span></p>
+            )}
+            {ens.parsed.defaulted !== undefined && (
+              <p>Defaulted: <span className="text-text font-medium">{ens.parsed.defaulted ? 'Yes' : 'No'}</span></p>
+            )}
+            {ens.parsed.raw && (
+              <p className="font-mono break-all">{ens.parsed.raw}</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 /**
- * Loads pool detail to extract the user's member idKey, then renders EnsPanelInner.
+ * Confirms the wallet is a member of this pool, then renders EnsPanelInner.
+ * Membership is read from pool detail; resolution itself happens in the inner
+ * panel and gates all display on a genuine live resolve.
  */
 function EnsPanelForPool({
   walletAddress,
@@ -190,32 +188,23 @@ function EnsPanelForPool({
     );
   }
 
-  const member = detail?.members.find(
+  const isMember = detail?.members.some(
     (m) => m.wallet.toLowerCase() === walletAddress.toLowerCase()
   );
 
-  if (!member) return null; // not actually a member of this pool
+  if (!isMember) return null; // not actually a member of this pool
 
-  return (
-    <EnsPanelInner
-      walletAddress={walletAddress}
-      pool={pool}
-      idKey={member.idKey}
-    />
-  );
+  return <EnsPanelInner walletAddress={walletAddress} pool={pool} />;
 }
 
 /**
  * EnsPanel — ENS bounty showcase panel.
  *
- * Shows the user's intended ENS name(s) and attempts live resolution via
- * UniversalResolverV2 on Sepolia.
- *
- * Live state: returns resolved reputation text → shows "Resolved live via ENS ✓"
- * Fallback state (name not minted yet — pool created before go-live, or RPC hiccup):
- * returns null → shows the on-chain ReputationRegistry value instead.
- *
- * The live-vs-fallback distinction is the ENS bounty narrative.
+ * Resolves each pool membership live via UniversalResolverV2 on Sepolia and
+ * shows ONLY what actually resolved. No constructed names, no registry
+ * fallback dressed up as ENS: if a name does not resolve live, nothing is
+ * shown for it. A displayed name is therefore always proof of on-chain
+ * resolution, never a client-side string.
  */
 export function EnsPanel() {
   const { address } = useAccount();
@@ -236,8 +225,9 @@ export function EnsPanel() {
       <div>
         <h2 className="text-base font-semibold text-text">ENS Resolution</h2>
         <p className="text-xs text-text-muted mt-0.5">
-          PotLuck members get deterministic ENS subnames under potluck.eth.
-          Reputation data resolves as a text record via ENS universalResolver.
+          Reputation resolves live as a text record through the ENS
+          universalResolver on Sepolia. Only names that resolve on-chain are
+          shown below.
         </p>
       </div>
 
@@ -248,7 +238,7 @@ export function EnsPanel() {
         </div>
       ) : realPools.length === 0 ? (
         <p className="text-sm text-text-muted">
-          Join a pool to get an ENS subname under potluck.eth.
+          Join a pool to get an ENS subname that resolves your reputation live.
         </p>
       ) : (
         <div className="space-y-6">

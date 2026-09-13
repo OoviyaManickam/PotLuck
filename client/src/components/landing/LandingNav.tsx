@@ -11,19 +11,6 @@ export function LandingNav() {
         <span className="text-lg font-semibold tracking-tight text-text">PotLuck</span>
       </Link>
 
-      {/* Center decorative links (hidden below md) */}
-      <div className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
-        <a href="#" className="text-sm text-text-muted hover:text-text transition-colors">
-          About
-        </a>
-        <a href="#" className="text-sm text-text-muted hover:text-text transition-colors">
-          Features
-        </a>
-        <a href="#" className="text-sm text-text-muted hover:text-text transition-colors">
-          Docs
-        </a>
-      </div>
-
       {/* Launch App button */}
       <PillButton href="/pools" variant="accent">
         Launch App

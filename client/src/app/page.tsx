@@ -3,7 +3,7 @@ import { Hero } from '@/components/landing/Hero';
 
 export default function Home() {
   return (
-    <div className="h-screen overflow-hidden">
+    <div className="min-h-screen flex flex-col overflow-hidden">
       <LandingNav />
       <Hero />
     </div>
