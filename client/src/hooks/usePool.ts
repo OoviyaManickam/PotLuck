@@ -21,9 +21,16 @@ export function usePool(address?: `0x${string}`): {
     queryKey,
     enabled: !!client && !!address,
     staleTime: 10_000,
-    refetchInterval: 15_000,
-    queryFn: async (): Promise<PoolDetail | undefined> => {
-      if (!client || !address) return undefined;
+    // Poll for live state, but not so often that a free-tier RPC rate-limits
+    // us. Retry transient failures (e.g. 429) with backoff so a blip doesn't
+    // leave the page empty.
+    refetchInterval: 30_000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    queryFn: async (): Promise<PoolDetail> => {
+      // `enabled` guards against this, but a queryFn must never return
+      // undefined (react-query throws) — throw so it retries instead.
+      if (!client || !address) throw new Error('Pool query not ready');
 
       // 1. Read primary detail fields via multicall.
       const detailContracts = [
@@ -43,9 +50,12 @@ export function usePool(address?: `0x${string}`): {
 
       const detailResults = await client.multicall({ contracts: detailContracts, allowFailure: true });
 
-      // All required fields must succeed.
-      for (const r of detailResults) {
-        if (r.status === 'failure') return undefined;
+      // All required fields must succeed. Throwing (rather than returning
+      // undefined) lets react-query retry transient RPC failures — e.g. a
+      // free-tier 429 — instead of surfacing a hard "data cannot be undefined"
+      // error and leaving the page stuck.
+      if (detailResults.some((r) => r.status === 'failure')) {
+        throw new Error('Pool detail multicall failed (transient RPC error?)');
       }
 
       const status = (detailResults[0].result as number) as PoolStatus;
