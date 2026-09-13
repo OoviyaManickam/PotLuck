@@ -9,6 +9,7 @@ import { PoolActions } from '@/components/PoolActions';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { PillButton } from '@/components/PillButton';
 import { shortAddr } from '@/lib/format';
+import { intendedPoolName } from '@/lib/ens';
 import { ADDRESSES } from '@/lib/contracts';
 import { factoryAbi } from '@/lib/abis/factory';
 
@@ -75,6 +76,13 @@ function PoolDetailInner({ poolAddr }: { poolAddr: `0x${string}` }) {
         <div>
           <h1 className="text-xl font-bold text-text">Pool {String(pool.poolId)}</h1>
           <p className="text-xs text-text-muted mt-0.5 font-mono">{shortAddr(poolAddr)}</p>
+          {/* Frame the pool<N> subdomain as a deliberate, auto-assigned ENS
+              naming scheme rather than an unnamed pool. */}
+          <p className="text-xs text-text-muted mt-1">
+            🏷 ENS:{' '}
+            <span className="font-mono text-text">{intendedPoolName(pool.poolId)}</span>{' '}
+            — canonical subdomain, auto-assigned at creation
+          </p>
         </div>
       </div>
 
