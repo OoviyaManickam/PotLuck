@@ -37,12 +37,11 @@ contract RegisterPotluckEth is Script {
     // ENSv2 Sepolia beta — verified on-chain (see docs/ENS_LAB_NOTEBOOK.md).
     address constant ETH_REGISTRAR = 0xa88553F454b77203B0D036A05c894d555EAAa2Cc;
 
-    string constant LABEL = "potluck";
+    // Circle Sepolia USDC (6 decimals). The registrar quotes + pulls the ~8 USDC fee in this token;
+    // register() reverts PaymentTokenNotSupported (0x02e2ae9e) if the payment token is address(0).
+    address constant USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
 
-    // Role bitmap the OWNER (MEMBER1) receives on the potluck node: permission to change the
-    // subregistry and the resolver later. Values from the spike / permissioned-registry docs.
-    uint256 constant ROLE_SET_SUBREGISTRY = 1 << 20;
-    uint256 constant ROLE_SET_RESOLVER = 1 << 24;
+    string constant LABEL = "potluck";
 
     function _owner() internal view returns (address) {
         return vm.addr(vm.envUint("PRIVATE_KEY"));
@@ -64,24 +63,29 @@ contract RegisterPotluckEth is Script {
         return vm.envAddress("REPUTATION_RESOLVER");
     }
 
-    /// @notice Roles arg is bytes32 on the REGISTRAR (differs from the registry's uint256 — see notebook).
-    function _roleBitmap() internal pure returns (bytes32) {
-        return bytes32(ROLE_SET_SUBREGISTRY | ROLE_SET_RESOLVER);
+    /// @notice Payment token — the registrar quotes/pulls the fee in this ERC20. Overridable for
+    ///         a future price-token change, but defaults to Circle Sepolia USDC.
+    function _paymentToken() internal view returns (address) {
+        return vm.envOr("USDC", USDC);
     }
 
     /// STEP 1 — broadcast the commitment. Prints the commitment hash for your records.
+    ///
+    /// makeCommitment (verified ABI, 7 args, ends in `referrer`) does NOT include the payment token —
+    /// only register() takes it. referrer = bytes32(0) (no referrer). These EXACT args must be reused
+    /// in registerStep() or the commitment hash won't match.
     function commitStep() external {
         address owner = _owner();
         bytes32 secret = _secret();
         address sub = _subregistry();
         address resolver = _resolver();
         uint64 duration = _duration();
-        bytes32 roles = _roleBitmap();
+        bytes32 referrer = bytes32(0);
 
         (bool ok, bytes memory ret) = ETH_REGISTRAR.staticcall(
             abi.encodeWithSignature(
                 "makeCommitment(string,address,bytes32,address,address,uint64,bytes32)",
-                LABEL, owner, secret, sub, resolver, duration, roles
+                LABEL, owner, secret, sub, resolver, duration, referrer
             )
         );
         require(ok, "makeCommitment failed");
@@ -102,25 +106,31 @@ contract RegisterPotluckEth is Script {
         console2.log(">> Commit sent. Wait >= 60s (and < 86400s), then run registerStep().");
     }
 
-    /// STEP 2 — broadcast the paid registration. Uses the SAME args as the commit.
-    /// The registrar pulls ~8 USDC via transferFrom; you must have approved it first (see runbook).
+    /// STEP 2 — broadcast the paid registration. Reuses the SAME (owner, secret, subregistry,
+    /// resolver, duration, referrer) as the commit, PLUS the payment token in slot 7.
+    ///
+    /// register (verified ABI, 8 args): (label, owner, secret, subregistry, resolver, duration,
+    ///   paymentToken, referrer). Slot 7 is the ERC20 fee token (USDC) — the earlier revert
+    ///   0x02e2ae9e (PaymentTokenNotSupported) was passing referrer here, leaving the token as
+    ///   address(0). The registrar pulls ~8 USDC via transferFrom; approve it first (see runbook).
     function registerStep() external {
         address owner = _owner();
         bytes32 secret = _secret();
         address sub = _subregistry();
         address resolver = _resolver();
         uint64 duration = _duration();
-        bytes32 roles = _roleBitmap();
-        address referrer = address(0);
+        address paymentToken = _paymentToken();
+        bytes32 referrer = bytes32(0);
 
         console2.log("== Phase 1 / registerStep ==");
         console2.log("Registering potluck.eth to:", owner);
+        console2.log("paymentToken       :", paymentToken);
 
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         (bool sent, bytes memory ret) = ETH_REGISTRAR.call(
             abi.encodeWithSignature(
                 "register(string,address,bytes32,address,address,uint64,address,bytes32)",
-                LABEL, owner, secret, sub, resolver, duration, referrer, roles
+                LABEL, owner, secret, sub, resolver, duration, paymentToken, referrer
             )
         );
         require(sent, "register failed (check commit age, USDC approval, availability)");
