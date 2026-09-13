@@ -2,7 +2,7 @@
 
 import { usePublicClient, useWatchContractEvent } from 'wagmi';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ADDRESSES, FACTORY_DEPLOY_BLOCK } from '@/lib/contracts';
+import { ADDRESSES, FACTORY_DEPLOY_BLOCK, getContractEventsChunked } from '@/lib/contracts';
 import { factoryAbi } from '@/lib/abis/factory';
 import { poolAbi } from '@/lib/abis/pool';
 import type { PoolSummary } from '@/lib/types';
@@ -31,13 +31,19 @@ export function usePools(): {
       if (!client) return [];
 
       // 1. Enumerate all pool addresses via PoolCreated events.
-      const logs = await client.getContractEvents({
-        address: ADDRESSES.factory,
-        abi: factoryAbi,
-        eventName: 'PoolCreated',
-        fromBlock: FACTORY_DEPLOY_BLOCK,
-        toBlock: 'latest',
-      });
+      //    Paged into small windows so free-tier RPCs (which cap eth_getLogs
+      //    at a narrow block range) accept every request — a single wide
+      //    fromBlock→latest scan is rejected outright and would leave the
+      //    list showing only sample pools.
+      const logs = (await getContractEventsChunked(
+        client,
+        {
+          address: ADDRESSES.factory,
+          abi: factoryAbi,
+          eventName: 'PoolCreated',
+        },
+        FACTORY_DEPLOY_BLOCK,
+      )) as Array<{ args: { pool?: `0x${string}` } }>;
 
       if (logs.length === 0) return [];
 

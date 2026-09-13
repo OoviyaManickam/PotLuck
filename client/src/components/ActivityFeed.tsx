@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePublicClient, useWatchContractEvent } from 'wagmi';
 import { poolAbi } from '@/lib/abis/pool';
-import { FACTORY_DEPLOY_BLOCK } from '@/lib/contracts';
+import { FACTORY_DEPLOY_BLOCK, getContractEventsChunked } from '@/lib/contracts';
 import { shortAddr } from '@/lib/format';
 import type { Log } from 'viem';
 
@@ -71,14 +71,18 @@ export function ActivityFeed({ poolAddr }: Props) {
       setLoading(true);
 
       try {
+        // Paged into small windows so free-tier RPCs (which cap eth_getLogs
+        // at a narrow block range) accept every request.
         const fetches = WATCHED_EVENTS.map((eventName) =>
-          publicClient.getContractEvents({
-            address: poolAddr,
-            abi: poolAbi,
-            eventName,
-            fromBlock: FACTORY_DEPLOY_BLOCK,
-            toBlock: 'latest',
-          }),
+          getContractEventsChunked(
+            publicClient,
+            {
+              address: poolAddr,
+              abi: poolAbi,
+              eventName,
+            },
+            FACTORY_DEPLOY_BLOCK,
+          ) as Promise<Array<Log>>,
         );
 
         const results = await Promise.allSettled(fetches);

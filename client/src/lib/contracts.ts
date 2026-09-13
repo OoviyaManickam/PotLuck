@@ -25,3 +25,67 @@ export const ADDRESSES = {
  * 0x7fc06ba4295a54a280bd3a3df4baf422575e51b262490123e9e2cc1021a20b72)
  */
 export const FACTORY_DEPLOY_BLOCK = 11694323n;
+
+/**
+ * Max block span per eth_getLogs request.
+ *
+ * Free-tier RPC providers (e.g. Alchemy's free plan on Sepolia) reject any
+ * eth_getLogs / getContractEvents call whose [fromBlock, toBlock] range spans
+ * more than 10 blocks with JSON-RPC error -32600. A single wide scan from
+ * FACTORY_DEPLOY_BLOCK to 'latest' (~thousands of blocks) therefore fails
+ * outright, so we must page the range in windows this size or smaller.
+ */
+export const MAX_LOG_BLOCK_RANGE = 10n;
+
+/** How many chunk requests to run concurrently. Keeps the paged scan quick
+ * without tripping per-second rate limits on free tiers. */
+const LOG_CHUNK_CONCURRENCY = 8;
+
+/**
+ * getContractEvents over an arbitrarily wide block range, paged into windows
+ * of MAX_LOG_BLOCK_RANGE so free-tier RPCs accept every request.
+ *
+ * Drop-in for `client.getContractEvents({ address, abi, eventName, fromBlock,
+ * toBlock: 'latest' })`: resolves the current head, splits [fromBlock, head]
+ * into fixed windows, fetches them with bounded concurrency, tolerates
+ * per-window failures (a failed window contributes no logs rather than
+ * rejecting the whole scan), and returns the merged logs in block order.
+ *
+ * `params` is passed through to each underlying getContractEvents call; any
+ * fromBlock/toBlock in it is ignored in favor of the paged window.
+ */
+export async function getContractEventsChunked(
+  client: {
+    getBlockNumber: () => Promise<bigint>;
+    getContractEvents: (args: any) => Promise<unknown[]>;
+  },
+  params: Record<string, unknown>,
+  fromBlock: bigint,
+): Promise<unknown[]> {
+  const head = await client.getBlockNumber();
+  if (head < fromBlock) return [];
+
+  // Build the list of [start, end] windows (inclusive) up front.
+  const windows: Array<[bigint, bigint]> = [];
+  for (let start = fromBlock; start <= head; start += MAX_LOG_BLOCK_RANGE) {
+    const end = start + MAX_LOG_BLOCK_RANGE - 1n;
+    windows.push([start, end > head ? head : end]);
+  }
+
+  const merged: unknown[] = [];
+
+  // Process windows in concurrency-limited batches, preserving order.
+  for (let i = 0; i < windows.length; i += LOG_CHUNK_CONCURRENCY) {
+    const batch = windows.slice(i, i + LOG_CHUNK_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map(([start, end]) =>
+        client.getContractEvents({ ...params, fromBlock: start, toBlock: end }),
+      ),
+    );
+    for (const result of settled) {
+      if (result.status === 'fulfilled') merged.push(...result.value);
+    }
+  }
+
+  return merged;
+}
