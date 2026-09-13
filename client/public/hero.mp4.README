@@ -1,0 +1,10 @@
+# hero.mp4 placeholder
+
+Drop your hero video here. The landing page will automatically use it once present.
+
+Expected format:
+- Type: MP4 video
+- Aspect ratio: 16:9 or wider
+- Recommended: High-contrast, animated, thematic visual
+
+If this file is absent, the gradient background with radial accent glow will be used as a fallback.

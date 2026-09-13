@@ -1,9 +1,11 @@
+import { LandingNav } from '@/components/landing/LandingNav';
+import { Hero } from '@/components/landing/Hero';
+
 export default function Home() {
   return (
-    <main className="flex flex-1 items-center justify-center min-h-screen">
-      <h1 className="text-4xl font-semibold tracking-tight text-text">
-        PotLuck — loading
-      </h1>
-    </main>
+    <div className="h-screen overflow-hidden">
+      <LandingNav />
+      <Hero />
+    </div>
   );
 }
