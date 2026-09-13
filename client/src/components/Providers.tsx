@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { sepolia } from 'viem/chains';
 import { useEffect, useState } from 'react';
 import { wagmiConfig } from '@/lib/wagmi';
+import { ToastProviderWithHost } from '@/components/TxToast';
 
 const queryClient = new QueryClient();
 
@@ -13,13 +14,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  if (!mounted) {
-    // During SSR / static prerender, skip the web3 providers entirely.
-    // They're client-only and PrivyProvider requires a real appId at init.
-    return <>{children}</>;
-  }
-
-  return (
+  const inner = mounted ? (
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? ''}
       config={{
@@ -43,5 +38,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         </WagmiProvider>
       </QueryClientProvider>
     </PrivyProvider>
+  ) : (
+    <>{children}</>
   );
+
+  return <ToastProviderWithHost>{inner}</ToastProviderWithHost>;
 }
