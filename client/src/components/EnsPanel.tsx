@@ -150,7 +150,7 @@ function EnsPanelInner({
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-yellow-400" />
             <p className="text-xs text-yellow-300 font-medium">
-              Will resolve via ENS once potluck.eth is registered
+              ENS name not minted yet — resolves live once this pool is created under the live adapter
             </p>
           </div>
           <p className="text-xs text-text-muted">
@@ -211,8 +211,8 @@ function EnsPanelForPool({
  * UniversalResolverV2 on Sepolia.
  *
  * Live state: returns resolved reputation text → shows "Resolved live via ENS ✓"
- * Current state (potluck.eth not registered): returns null → shows registry
- * value + "Will resolve via ENS once potluck.eth is registered"
+ * Fallback state (name not minted yet — pool created before go-live, or RPC hiccup):
+ * returns null → shows the on-chain ReputationRegistry value instead.
  *
  * The live-vs-fallback distinction is the ENS bounty narrative.
  */

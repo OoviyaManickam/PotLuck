@@ -23,7 +23,8 @@ export function MemberRow({ member, slot, poolId, isMe = false }: Props) {
 
   // ENS live badge state — null default means "not resolved yet" (or unresolvable).
   // This is PURELY ADDITIVE: the row renders exactly as before when this is null.
-  // potluck.eth is not registered yet so this will be null in production today.
+  // potluck.eth is live, so this resolves for members of pools minted under the
+  // live naming adapter; it stays null for pre-go-live pools or an RPC hiccup.
   const [ensLive, setEnsLive] = useState<string | null>(null);
 
   // Intended ENS name: <addr-hex-no-0x>.pool<poolId>.potluck.eth
@@ -68,8 +69,9 @@ export function MemberRow({ member, slot, poolId, isMe = false }: Props) {
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-xs text-text-muted truncate">{ensLabel}</p>
           {/* ENS live badge — additive enhancement; only shown when live resolution succeeds.
-              When potluck.eth is unregistered (today), ensLive is null and this renders nothing.
-              The row is IDENTICAL to its prior form when ensLive is null. */}
+              potluck.eth is live, so this lights up for members of pools minted under the live
+              naming adapter. When ensLive is null (pre-go-live pool / RPC hiccup) the row is
+              IDENTICAL to its prior form. */}
           {ensLive !== null && (
             <span className="shrink-0 inline-flex items-center rounded-full border border-green-500/40 bg-green-500/15 px-1.5 py-0.5 text-[10px] font-medium text-green-300">
               live via ENS ✓

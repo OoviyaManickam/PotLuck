@@ -8,10 +8,13 @@
  * <label> = lowercased hex address without 0x prefix
  * (matches the fork-test convention: <alicehex>.pool0.potluck.eth)
  *
- * CURRENT STATE: potluck.eth is NOT registered yet.
- * resolveReputationViaEns returns null gracefully until the domain is live.
- * Callers must show the registry-derived fallback + a clear
- * "resolves via ENS once potluck.eth is registered" label when null is returned.
+ * CURRENT STATE: potluck.eth IS registered live on Sepolia, with PotLuck's
+ * ReputationResolver attached at the potluck.eth node and the factory minting
+ * pool<N>.potluck.eth for every new pool. resolveReputationViaEns returns the
+ * live reputation text record for a member once that member's pool was created
+ * under the live naming adapter; it still returns null gracefully for names that
+ * don't exist yet (e.g. pools created before go-live, or an RPC hiccup), so
+ * callers keep the registry-derived fallback.
  */
 
 import { normalize } from 'viem/ens';
@@ -107,9 +110,9 @@ export function parseReputationText(s: string): {
  * The public client carries the transport (Alchemy RPC from env — no hardcoded RPC here).
  *
  * Returns the raw reputation string if resolved, null otherwise.
- * null means: potluck.eth not registered yet, name not found, resolver reverted,
- * or any network/RPC error. Callers should show the registry fallback and
- * display "resolves via ENS once potluck.eth is registered".
+ * null means: the name doesn't exist yet (pool created before go-live, or member
+ * not yet minted), resolver reverted, or any network/RPC error. Callers should
+ * show the registry fallback when null is returned.
  *
  * NEVER throws — all errors are caught and converted to null.
  */
@@ -131,7 +134,7 @@ export async function resolveReputationViaEns(
     if (!text) return null;
     return text;
   } catch {
-    // potluck.eth not registered, resolver revert, network error — all safe.
+    // Name not minted yet, resolver revert, or network error — all safe.
     return null;
   }
 }

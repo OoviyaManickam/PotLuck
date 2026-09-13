@@ -15,6 +15,15 @@ export const ADDRESSES = {
   factory: "0xe1dA53345211C225A072fCaa3d16D611F39f5e4F" as `0x${string}`,
   registry: "0xC040A3819f6ecd30AD8416D7dA5FB7F41A7A577F" as `0x${string}`,
   noOpGate: "0x62972564798F7DB372d0471c43Fc206F395cf63a" as `0x${string}`,
+  // Live ENS naming adapter. potluck.eth is registered on Sepolia and the factory's
+  // naming() now points here (was NoOpNaming 0xF3Cc…5a02A pre-go-live), so every NEW
+  // pool auto-mints pool<N>.potluck.eth on-chain. Rollback address kept below.
+  naming: "0xED949A144afF19e66b6b48FBaE2940c473b1B905" as `0x${string}`,
+  // ReputationResolver attached at the potluck.eth node — serves live reputation as the
+  // `potluck.reputation` text record for <addr>.pool<N>.potluck.eth (inherited via wildcard).
+  reputationResolver: "0x65570cF7a7050a121F3b9a055c626e991e9198B5" as `0x${string}`,
+  // Kept for a one-tx rollback if the ENSv2 beta hiccups mid-demo:
+  // factory.setNaming(noOpNaming) restores the non-minting adapter.
   noOpNaming: "0xF3CcF1dd9348ebEeDd68f557dc8Fb8090655a02A" as `0x${string}`,
 } as const;
 
