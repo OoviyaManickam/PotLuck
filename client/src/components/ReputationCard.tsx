@@ -115,15 +115,17 @@ function PoolMembershipProbe({
   useEffect(() => {
     if (isLoading || !pool) return;
 
-    // Primary membership signal: mySlotPlusOne > 0 means the connected wallet
-    // is in this pool. Then locate the Member record to get its idKey.
-    if (pool.mySlotPlusOne > 0n) {
-      const member = pool.members.find(
-        (m) => m.wallet.toLowerCase() === walletAddress.toLowerCase()
-      );
-      if (member) {
-        onFound(member.idKey);
-      }
+    // Membership signal: scan the loaded member list for the connected wallet.
+    // We deliberately do NOT gate on pool.mySlotPlusOne — that field comes from
+    // a separate slotOfPlusOne() point-read that .catch(() => 0n)'s on any RPC
+    // blip, so it can read 0 even when the wallet is genuinely in pool.members
+    // (which is populated by the reliable getMember multicall). Scanning members
+    // directly matches how EnsPanel and MemberPoolCard already detect membership.
+    const member = pool.members.find(
+      (m) => m.wallet.toLowerCase() === walletAddress.toLowerCase()
+    );
+    if (member) {
+      onFound(member.idKey);
     }
   }, [isLoading, pool, walletAddress, onFound]);
 

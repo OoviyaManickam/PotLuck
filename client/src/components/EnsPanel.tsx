@@ -8,6 +8,7 @@ import { useReputation } from '@/hooks/useReputation';
 import {
   intendedMemberName,
   intendedPoolName,
+  memberEnsLabel,
   resolveReputationViaEns,
   parseReputationText,
   UNIVERSAL_RESOLVER_V2,
@@ -37,7 +38,7 @@ function useEnsResolution(
     if (!walletAddress || !pool || !client) return;
 
     // Build the intended ENS name using the address-hex label convention
-    const label = walletAddress.slice(2).toLowerCase(); // strip 0x, lowercase
+    const label = memberEnsLabel(walletAddress); // lowercase hex incl. 0x, matches PotluckENS._memberLabel
     const ensName = intendedMemberName(label, pool.poolId);
 
     setResolution({
@@ -86,7 +87,7 @@ function EnsPanelInner({
   const rep = useReputation(idKey);
   const ens = useEnsResolution(walletAddress, pool, idKey);
   const poolEnsName = intendedPoolName(pool.poolId);
-  const memberEnsName = ens?.ensName ?? intendedMemberName(walletAddress.slice(2).toLowerCase(), pool.poolId);
+  const memberEnsName = ens?.ensName ?? intendedMemberName(memberEnsLabel(walletAddress), pool.poolId);
 
   const isLive = ens && !ens.loading && ens.reputationText !== null;
   const isFallback = !ens?.loading && !isLive;

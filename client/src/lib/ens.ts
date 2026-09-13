@@ -5,8 +5,11 @@
  *   member: <label>.pool<poolId>.potluck.eth
  *   pool:   pool<poolId>.potluck.eth
  *
- * <label> = lowercased hex address without 0x prefix
- * (matches the fork-test convention: <alicehex>.pool0.potluck.eth)
+ * <label> = lowercased hex address INCLUDING the 0x prefix
+ * (matches PotluckENS._memberLabel / _toHexString on-chain, which mints
+ *  0x<40hex>.pool<N>.potluck.eth and records idKeyOf at that namehash:
+ *  <0xalicehex>.pool0.potluck.eth). Dropping 0x silently breaks live
+ *  resolution — the namehash no longer matches what the contract minted.
  *
  * CURRENT STATE: potluck.eth IS registered live on Sepolia, with PotLuck's
  * ReputationResolver attached at the potluck.eth node and the factory minting
@@ -42,10 +45,21 @@ export function intendedPoolName(poolId: bigint | number): string {
 }
 
 /**
+ * Member ENS label = the member's wallet address as lowercase hex, INCLUDING
+ * the 0x prefix. This MUST match PotluckENS._memberLabel (_toHexString), which
+ * mints  0x<40hex>.pool<N>.potluck.eth  and records idKeyOf at that namehash.
+ * Stripping 0x here silently breaks live resolution (namehash mismatch).
+ */
+export function memberEnsLabel(wallet: `0x${string}` | string): string {
+  return wallet.toLowerCase();
+}
+
+/**
  * Build the intended ENS name for a pool member.
- * label should be the member's lowercase hex address without the 0x prefix
- * (e.g. "a1b2c3...") — this matches the fork-test convention.
- * e.g. a1b2c3....pool0.potluck.eth
+ * label should be the member's lowercase hex address WITH the 0x prefix
+ * (e.g. "0xa1b2c3...") — this matches PotluckENS._memberLabel on-chain.
+ * Use memberEnsLabel(wallet) to build it.
+ * e.g. 0xa1b2c3....pool0.potluck.eth
  */
 export function intendedMemberName(
   label: string,
