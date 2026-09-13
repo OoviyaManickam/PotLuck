@@ -1,8 +1,12 @@
 'use client';
 
-import { usePublicClient, useWatchContractEvent } from 'wagmi';
+import { usePublicClient } from 'wagmi';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ADDRESSES, FACTORY_DEPLOY_BLOCK, getContractEventsChunked } from '@/lib/contracts';
+import {
+  ADDRESSES,
+  FACTORY_DEPLOY_BLOCK,
+  getContractEventsChunkedWithCursor,
+} from '@/lib/contracts';
 import { factoryAbi } from '@/lib/abis/factory';
 import { poolAbi } from '@/lib/abis/pool';
 import type { PoolSummary } from '@/lib/types';
@@ -10,10 +14,45 @@ import { PoolStatus } from '@/lib/types';
 
 const POOLS_QUERY_KEY = ['potluck', 'pools'] as const;
 
-// @check: getContractEvents call below typechecks against factoryAbi —
-// eventName: 'PoolCreated' is present in factoryAbi, and the returned
-// log.args.pool / log.args.poolId fields match the indexed/non-indexed
-// inputs in that event definition.
+// ── Pool-address discovery cache ─────────────────────────────────────────────
+// Enumerating pools means scanning PoolCreated logs from the factory deploy
+// block to head, chunked into ≤10-block windows for free-tier RPCs. That's
+// ~140+ eth_getLogs requests and grows every block — re-running it on every
+// refetch quickly trips the RPC's rate limit (HTTP 429), which the browser
+// then also surfaces as a CORS error. Pools never disappear, so we persist the
+// addresses we've found plus the block we scanned up to, and each subsequent
+// run only scans the handful of new blocks since. localStorage so it survives
+// reloads (the demo flips between accounts a lot).
+const CACHE_KEY = 'potluck.pools.discovery.v1';
+
+interface DiscoveryCache {
+  /** Deduped pool addresses discovered so far (lowercased). */
+  addresses: string[];
+  /** Highest block fully scanned. Next scan starts at lastBlock + 1. */
+  lastBlock: string; // bigint serialized as decimal string
+}
+
+function readCache(): DiscoveryCache | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as DiscoveryCache;
+    if (!Array.isArray(parsed.addresses) || typeof parsed.lastBlock !== 'string') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(cache: DiscoveryCache): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Quota/private-mode — non-fatal, we just re-scan next time.
+  }
+}
 
 export function usePools(): {
   pools: PoolSummary[];
@@ -26,28 +65,50 @@ export function usePools(): {
   const { data: pools = [], isLoading, refetch } = useQuery({
     queryKey: POOLS_QUERY_KEY,
     enabled: !!client,
-    staleTime: 30_000,
+    // Pools change slowly; keep the data fresh for a while and don't refetch
+    // on every window focus/reconnect. This is the main lever that stops the
+    // demo (which flips browser focus between app + MetaMask constantly) from
+    // hammering the RPC.
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     queryFn: async (): Promise<PoolSummary[]> => {
       if (!client) return [];
 
-      // 1. Enumerate all pool addresses via PoolCreated events.
-      //    Paged into small windows so free-tier RPCs (which cap eth_getLogs
-      //    at a narrow block range) accept every request — a single wide
-      //    fromBlock→latest scan is rejected outright and would leave the
-      //    list showing only sample pools.
-      const logs = (await getContractEventsChunked(
+      // 1. Enumerate pool addresses via PoolCreated events — but only scan
+      //    blocks we haven't scanned before. Start from the cached cursor
+      //    (falling back to the factory deploy block on a cold cache).
+      const cache = readCache();
+      const cachedAddresses = new Set<string>(cache?.addresses ?? []);
+      const scanFrom = cache ? BigInt(cache.lastBlock) + 1n : FACTORY_DEPLOY_BLOCK;
+
+      const { logs, scannedTo, complete } = await getContractEventsChunkedWithCursor(
         client,
         {
           address: ADDRESSES.factory,
           abi: factoryAbi,
           eventName: 'PoolCreated',
         },
-        FACTORY_DEPLOY_BLOCK,
-      )) as Array<{ args: { pool?: `0x${string}` } }>;
+        scanFrom,
+      );
 
-      if (logs.length === 0) return [];
+      for (const log of logs as Array<{ args: { pool?: `0x${string}` } }>) {
+        const pool = log.args.pool;
+        if (pool) cachedAddresses.add(pool.toLowerCase());
+      }
 
-      const poolAddresses = logs.map((log) => log.args.pool as `0x${string}`);
+      // Only advance the persisted cursor when the whole range scanned
+      // cleanly — otherwise a partial (429'd) scan would let us skip past
+      // blocks we never actually read and permanently miss a pool.
+      if (complete) {
+        writeCache({ addresses: [...cachedAddresses], lastBlock: scannedTo.toString() });
+      }
+
+      const poolAddresses = [...cachedAddresses] as `0x${string}`[];
+      if (poolAddresses.length === 0) return [];
 
       // 2. Batch-read summary fields for every pool using multicall.
       type SummaryField = 'status' | 'contribution' | 'memberCount' | 'memberCountJoined' | 'currentRound' | 'poolId';
@@ -99,17 +160,11 @@ export function usePools(): {
         });
       }
 
-      return summaries;
-    },
-  });
+      // Sort by poolId ascending so ordering is stable across runs (the cache
+      // is a Set, so insertion order isn't meaningful).
+      summaries.sort((a, b) => (a.poolId < b.poolId ? -1 : a.poolId > b.poolId ? 1 : 0));
 
-  // Live updates: invalidate on every new PoolCreated event.
-  useWatchContractEvent({
-    address: ADDRESSES.factory,
-    abi: factoryAbi,
-    eventName: 'PoolCreated',
-    onLogs: () => {
-      queryClient.invalidateQueries({ queryKey: POOLS_QUERY_KEY });
+      return summaries;
     },
   });
 

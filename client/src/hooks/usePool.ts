@@ -23,8 +23,12 @@ export function usePool(address?: `0x${string}`): {
     staleTime: 10_000,
     // Poll for live state, but not so often that a free-tier RPC rate-limits
     // us. Retry transient failures (e.g. 429) with backoff so a blip doesn't
-    // leave the page empty.
+    // leave the page empty. Don't refetch on window focus/reconnect — the demo
+    // flips focus between the app and MetaMask constantly, and each focus
+    // refetch adds RPC load that can trip a 429.
     refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     queryFn: async (): Promise<PoolDetail> => {

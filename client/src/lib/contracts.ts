@@ -89,3 +89,53 @@ export async function getContractEventsChunked(
 
   return merged;
 }
+
+/**
+ * Like getContractEventsChunked, but also reports the head block it scanned to
+ * and whether every window succeeded. Callers can persist `scannedTo` as a
+ * cursor and pass it (+1) as `fromBlock` next time, so a long history is only
+ * paid for once — subsequent scans cover just the handful of new blocks.
+ *
+ * `complete` is false if any window failed (e.g. a transient 429). When
+ * incomplete, callers should NOT advance their persisted cursor past the last
+ * fully-scanned point, or they'd permanently miss events in the gap. The
+ * simplest safe rule: only advance the cursor when `complete` is true.
+ */
+export async function getContractEventsChunkedWithCursor(
+  client: {
+    getBlockNumber: () => Promise<bigint>;
+    getContractEvents: (args: any) => Promise<unknown[]>;
+  },
+  params: Record<string, unknown>,
+  fromBlock: bigint,
+): Promise<{ logs: unknown[]; scannedTo: bigint; complete: boolean }> {
+  const head = await client.getBlockNumber();
+  if (head < fromBlock) {
+    // Nothing new since last scan — cursor is already current.
+    return { logs: [], scannedTo: head < 0n ? fromBlock - 1n : head, complete: true };
+  }
+
+  const windows: Array<[bigint, bigint]> = [];
+  for (let start = fromBlock; start <= head; start += MAX_LOG_BLOCK_RANGE) {
+    const end = start + MAX_LOG_BLOCK_RANGE - 1n;
+    windows.push([start, end > head ? head : end]);
+  }
+
+  const merged: unknown[] = [];
+  let complete = true;
+
+  for (let i = 0; i < windows.length; i += LOG_CHUNK_CONCURRENCY) {
+    const batch = windows.slice(i, i + LOG_CHUNK_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map(([start, end]) =>
+        client.getContractEvents({ ...params, fromBlock: start, toBlock: end }),
+      ),
+    );
+    for (const result of settled) {
+      if (result.status === 'fulfilled') merged.push(...result.value);
+      else complete = false;
+    }
+  }
+
+  return { logs: merged, scannedTo: head, complete };
+}
