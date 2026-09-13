@@ -6,11 +6,13 @@ import {ROSCAFactory} from "../src/ROSCAFactory.sol";
 import {ROSCAPool} from "../src/ROSCAPool.sol";
 import {ReputationRegistry} from "../src/ReputationRegistry.sol";
 import {NoOpGate} from "../src/identity/NoOpGate.sol";
+import {NoOpNaming} from "../src/naming/NoOpNaming.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
 
 contract ROSCAFactoryTest is Test {
     MockUSDC token;
     NoOpGate gate;
+    NoOpNaming naming;
     ROSCAFactory factory;
     ReputationRegistry registry;
     address treasury = makeAddr("treasury");
@@ -19,8 +21,9 @@ contract ROSCAFactoryTest is Test {
     function setUp() public {
         token = new MockUSDC();
         gate = new NoOpGate();
+        naming = new NoOpNaming();
         // Deploy factory first, then registry pointing at it, then wire.
-        factory = new ROSCAFactory(address(token), address(gate), treasury);
+        factory = new ROSCAFactory(address(token), address(gate), address(naming), treasury);
         registry = new ReputationRegistry(address(factory));
         factory.setRegistry(address(registry));
     }
@@ -43,7 +46,7 @@ contract ROSCAFactoryTest is Test {
     }
 
     function test_OnlyOwnerSetsRegistry() public {
-        ROSCAFactory f2 = new ROSCAFactory(address(token), address(gate), treasury);
+        ROSCAFactory f2 = new ROSCAFactory(address(token), address(gate), address(naming), treasury);
         vm.prank(alice);
         vm.expectRevert(ROSCAFactory.NotOwner.selector);
         f2.setRegistry(address(registry));
@@ -96,5 +99,18 @@ contract ROSCAFactoryTest is Test {
         assertEq(factory.poolCount(), 2);
         assertEq(ROSCAPool(factory.allPools(0)).poolId(), 0);
         assertEq(ROSCAPool(factory.allPools(1)).poolId(), 1);
+    }
+
+    function test_IsPoolTrueForCreatedFalseOtherwise() public {
+        vm.prank(alice);
+        address pool = factory.createPool(_cfg(10e6, 3), "");
+        assertTrue(factory.isPool(pool));
+        assertFalse(factory.isPool(makeAddr("stranger")));
+    }
+
+    function test_OnlyOwnerSetsNaming() public {
+        vm.prank(alice);
+        vm.expectRevert(ROSCAFactory.NotOwner.selector);
+        factory.setNaming(makeAddr("newNaming"));
     }
 }

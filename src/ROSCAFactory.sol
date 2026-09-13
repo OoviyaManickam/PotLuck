@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {ROSCAPool} from "./ROSCAPool.sol";
 import {ReputationRegistry} from "./ReputationRegistry.sol";
 import {IIdentityGate} from "./interfaces/IIdentityGate.sol";
+import {IPoolNaming} from "./interfaces/IPoolNaming.sol";
 import {Tiers} from "./Tiers.sol";
 
 /// @title ROSCAFactory
@@ -29,6 +30,7 @@ contract ROSCAFactory {
 
     address public immutable token;
     IIdentityGate public identityGate; // swappable by owner (NoOp -> WorldID)
+    IPoolNaming public naming; // swappable by owner (NoOp -> PotluckENS)
     address public immutable treasury;
     address public owner;
 
@@ -36,9 +38,11 @@ contract ROSCAFactory {
     bool private registrySet;
 
     address[] public allPools;
+    mapping(address => bool) public isPool;
 
     event RegistrySet(address indexed registry);
     event IdentityGateSet(address indexed gate);
+    event NamingSet(address indexed naming);
     event PoolCreated(address indexed pool, address indexed creator, uint256 poolId, PoolConfig config);
 
     error NotOwner();
@@ -52,9 +56,10 @@ contract ROSCAFactory {
         _;
     }
 
-    constructor(address token_, address identityGate_, address treasury_) {
+    constructor(address token_, address identityGate_, address naming_, address treasury_) {
         token = token_;
         identityGate = IIdentityGate(identityGate_);
+        naming = IPoolNaming(naming_);
         treasury = treasury_;
         owner = msg.sender;
     }
@@ -71,6 +76,12 @@ contract ROSCAFactory {
     function setIdentityGate(address gate_) external onlyOwner {
         identityGate = IIdentityGate(gate_);
         emit IdentityGateSet(gate_);
+    }
+
+    /// @notice Swap the naming adapter (e.g. NoOpNaming -> PotluckENS). Affects pools created after.
+    function setNaming(address naming_) external onlyOwner {
+        naming = IPoolNaming(naming_);
+        emit NamingSet(naming_);
     }
 
     /// @notice Create a new pool. Enforces the member floor and the creator's tier caps.
@@ -106,7 +117,9 @@ contract ROSCAFactory {
 
         pool = address(new ROSCAPool(p));
         allPools.push(pool);
+        isPool[pool] = true;
         registry.authorizePool(pool);
+        naming.registerPool(poolId);
 
         emit PoolCreated(pool, msg.sender, poolId, cfg);
     }

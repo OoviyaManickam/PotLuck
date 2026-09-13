@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Script, console2} from "forge-std/Script.sol";
 import {MockUSDC} from "../test/mocks/MockUSDC.sol";
 import {NoOpGate} from "../src/identity/NoOpGate.sol";
+import {NoOpNaming} from "../src/naming/NoOpNaming.sol";
 import {ReputationRegistry} from "../src/ReputationRegistry.sol";
 import {ROSCAFactory} from "../src/ROSCAFactory.sol";
 
@@ -36,7 +37,8 @@ contract Deploy is Script {
 
         MockUSDC token = new MockUSDC();
         NoOpGate gate = new NoOpGate();
-        ROSCAFactory factory = new ROSCAFactory(address(token), address(gate), treasury);
+        NoOpNaming naming = new NoOpNaming();
+        ROSCAFactory factory = new ROSCAFactory(address(token), address(gate), address(naming), treasury);
         ReputationRegistry registry = new ReputationRegistry(address(factory));
         factory.setRegistry(address(registry));
 
@@ -47,6 +49,7 @@ contract Deploy is Script {
         console2.log("treasury          :", treasury);
         console2.log("MockUSDC          :", address(token));
         console2.log("NoOpGate          :", address(gate));
+        console2.log("NoOpNaming        :", address(naming));
         console2.log("ROSCAFactory      :", address(factory));
         console2.log("ReputationRegistry:", address(registry));
     }
