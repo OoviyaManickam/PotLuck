@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IIdentityGate} from "./interfaces/IIdentityGate.sol";
+import {IPoolNaming} from "./interfaces/IPoolNaming.sol";
 import {ReputationRegistry} from "./ReputationRegistry.sol";
 import {Tiers} from "./Tiers.sol";
 
@@ -48,6 +49,7 @@ contract ROSCAPool {
     IERC20 public immutable token;
     IIdentityGate public immutable identityGate;
     ReputationRegistry public immutable reputation;
+    IPoolNaming public immutable naming;
 
     uint256 public immutable contribution; // per member, per round
     uint8 public immutable memberCount; // N
@@ -103,6 +105,7 @@ contract ROSCAPool {
         address token;
         address identityGate;
         address reputation;
+        address naming;
         address treasury;
         uint256 contribution;
         uint8 memberCount;
@@ -119,6 +122,7 @@ contract ROSCAPool {
         token = IERC20(p.token);
         identityGate = IIdentityGate(p.identityGate);
         reputation = ReputationRegistry(p.reputation);
+        naming = IPoolNaming(p.naming);
         treasury = p.treasury;
         contribution = p.contribution;
         memberCount = p.memberCount;
@@ -165,6 +169,7 @@ contract ROSCAPool {
         );
         uint256 slot = members.length - 1;
         slotOfPlusOne[msg.sender] = slot + 1;
+        naming.registerMember(poolId, msg.sender, idKey);
 
         emit MemberJoined(poolId, msg.sender, idKey, slot, identityGate.isLiveGate());
 

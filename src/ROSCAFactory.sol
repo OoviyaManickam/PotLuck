@@ -105,6 +105,7 @@ contract ROSCAFactory {
             token: token,
             identityGate: address(identityGate),
             reputation: address(registry),
+            naming: address(naming),
             treasury: treasury,
             contribution: cfg.contribution,
             memberCount: cfg.memberCount,

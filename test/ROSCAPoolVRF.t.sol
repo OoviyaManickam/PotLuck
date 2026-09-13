@@ -6,6 +6,7 @@ import {ROSCAPool} from "../src/ROSCAPool.sol";
 import {ROSCAPoolVRF} from "../src/ROSCAPoolVRF.sol";
 import {ReputationRegistry} from "../src/ReputationRegistry.sol";
 import {NoOpGate} from "../src/identity/NoOpGate.sol";
+import {NoOpNaming} from "../src/naming/NoOpNaming.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
 import {VRFCoordinatorV2_5Mock} from
     "@chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
@@ -48,6 +49,7 @@ contract ROSCAPoolVRFTest is Test {
             token: address(token),
             identityGate: address(gate),
             reputation: address(registry),
+            naming: address(new NoOpNaming()),
             treasury: treasury,
             contribution: CONTRIB,
             memberCount: N,

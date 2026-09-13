@@ -6,6 +6,7 @@ import {ROSCAPool} from "../src/ROSCAPool.sol";
 import {ROSCAPoolHarness} from "./mocks/ROSCAPoolHarness.sol";
 import {ReputationRegistry} from "../src/ReputationRegistry.sol";
 import {NoOpGate} from "../src/identity/NoOpGate.sol";
+import {NoOpNaming} from "../src/naming/NoOpNaming.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
 
 /// @notice ROSCAPool lifecycle tests. This test contract acts as the "factory" so it can
@@ -46,6 +47,7 @@ contract ROSCAPoolTest is Test {
             token: address(token),
             identityGate: address(gate),
             reputation: address(registry),
+            naming: address(new NoOpNaming()),
             treasury: treasury,
             contribution: CONTRIB,
             memberCount: N,
@@ -84,6 +86,7 @@ contract ROSCAPoolTest is Test {
             token: address(token),
             identityGate: address(gate),
             reputation: address(registry),
+            naming: address(new NoOpNaming()),
             treasury: treasury,
             contribution: CONTRIB,
             memberCount: 4,
@@ -398,5 +401,16 @@ contract ROSCAPoolTest is Test {
                 assertEq(token.balanceOf(target), targetBalBefore, "ejected member received no pot");
             }
         }
+    }
+
+    // --------------------------------------------------------------------
+    // naming seam
+    // --------------------------------------------------------------------
+
+    function test_JoinSucceedsWithNamingWired() public {
+        ROSCAPoolHarness pool = _newPool(false);
+        _fundApprove(pool, alice, COLLATERAL);
+        _join(pool, alice);
+        assertEq(pool.memberCountJoined(), 1);
     }
 }
