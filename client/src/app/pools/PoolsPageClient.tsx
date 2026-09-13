@@ -18,9 +18,13 @@ export default function PoolsPageClient() {
 
   // Carried finding: after a successful createPool tx, explicitly call refetch()
   // so the new pool appears even if the WebSocket event watcher dropped silently.
+  // The receipt lands before the PoolCreated log is queryable on free-tier RPCs,
+  // so fire again on a short delay to catch the log once indexing catches up.
   function handlePoolCreated() {
-    refetch();
     setShowForm(false);
+    refetch();
+    setTimeout(refetch, 3000);
+    setTimeout(refetch, 8000);
   }
 
   const allCards = [

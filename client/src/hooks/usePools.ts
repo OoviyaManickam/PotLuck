@@ -25,6 +25,16 @@ const POOLS_QUERY_KEY = ['potluck', 'pools'] as const;
 // reloads (the demo flips between accounts a lot).
 const CACHE_KEY = 'potluck.pools.discovery.v1';
 
+// Blocks near the chain tip may not have their logs indexed yet on free-tier
+// RPCs — getBlockNumber and getContractEvents can be served by different nodes
+// with slightly different tips, so a freshly-created pool's PoolCreated log can
+// be missing from getLogs even though its receipt is mined. Never persist the
+// scan cursor all the way to head: hold it back by this many blocks so the most
+// recent range is always re-scanned on the next run, until those logs are
+// reliably queryable. Costs ~1 extra chunk per scan; without it a just-created
+// pool gets skipped forever (cursor advances past its block).
+const REORG_SAFETY_BLOCKS = 12n;
+
 interface DiscoveryCache {
   /** Deduped pool addresses discovered so far (lowercased). */
   addresses: string[];
@@ -115,7 +125,15 @@ export function usePools(): {
       // scan we keep the previous cursor (or FACTORY_DEPLOY_BLOCK - 1 on a cold
       // cache) so the next run re-scans the same range.
       if (complete) {
-        writeCache({ addresses: [...cachedAddresses], lastBlock: scannedTo.toString() });
+        // Hold the persisted cursor back from head by REORG_SAFETY_BLOCKS so the
+        // most recent blocks are re-scanned next run — this is what lets a
+        // just-created pool show up once its PoolCreated log finishes indexing,
+        // instead of the cursor jumping past its block and skipping it forever.
+        const safeCursor =
+          scannedTo > FACTORY_DEPLOY_BLOCK + REORG_SAFETY_BLOCKS
+            ? scannedTo - REORG_SAFETY_BLOCKS
+            : FACTORY_DEPLOY_BLOCK - 1n;
+        writeCache({ addresses: [...cachedAddresses], lastBlock: safeCursor.toString() });
       } else {
         const prevCursor = cache?.lastBlock ?? (FACTORY_DEPLOY_BLOCK - 1n).toString();
         writeCache({ addresses: [...cachedAddresses], lastBlock: prevCursor });
