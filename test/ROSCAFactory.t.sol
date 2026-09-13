@@ -8,6 +8,7 @@ import {ReputationRegistry} from "../src/ReputationRegistry.sol";
 import {NoOpGate} from "../src/identity/NoOpGate.sol";
 import {NoOpNaming} from "../src/naming/NoOpNaming.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
+import {RevertingNaming} from "./mocks/RevertingNaming.sol";
 
 contract ROSCAFactoryTest is Test {
     MockUSDC token;
@@ -112,5 +113,13 @@ contract ROSCAFactoryTest is Test {
         vm.prank(alice);
         vm.expectRevert(ROSCAFactory.NotOwner.selector);
         factory.setNaming(makeAddr("newNaming"));
+    }
+
+    function test_CreatePoolSucceedsEvenIfNamingReverts() public {
+        factory.setNaming(address(new RevertingNaming()));
+        vm.prank(alice);
+        address pool = factory.createPool(_cfg(10e6, 3), "");
+        assertTrue(pool != address(0));
+        assertTrue(factory.isPool(pool));
     }
 }

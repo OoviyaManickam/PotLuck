@@ -169,7 +169,7 @@ contract ROSCAPool {
         );
         uint256 slot = members.length - 1;
         slotOfPlusOne[msg.sender] = slot + 1;
-        naming.registerMember(poolId, msg.sender, idKey);
+        try naming.registerMember(poolId, msg.sender, idKey) {} catch {}
 
         emit MemberJoined(poolId, msg.sender, idKey, slot, identityGate.isLiveGate());
 

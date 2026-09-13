@@ -8,6 +8,7 @@ import {ReputationRegistry} from "../src/ReputationRegistry.sol";
 import {NoOpGate} from "../src/identity/NoOpGate.sol";
 import {NoOpNaming} from "../src/naming/NoOpNaming.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
+import {RevertingNaming} from "./mocks/RevertingNaming.sol";
 
 /// @notice ROSCAPool lifecycle tests. This test contract acts as the "factory" so it can
 ///         authorize pools on the registry, then drives pools through full cycles.
@@ -409,6 +410,34 @@ contract ROSCAPoolTest is Test {
 
     function test_JoinSucceedsWithNamingWired() public {
         ROSCAPoolHarness pool = _newPool(false);
+        _fundApprove(pool, alice, COLLATERAL);
+        _join(pool, alice);
+        assertEq(pool.memberCountJoined(), 1);
+    }
+
+    function _newPoolReverting() internal returns (ROSCAPoolHarness pool) {
+        ROSCAPool.InitParams memory p = ROSCAPool.InitParams({
+            poolId: 1,
+            creator: alice,
+            token: address(token),
+            identityGate: address(gate),
+            reputation: address(registry),
+            naming: address(new RevertingNaming()),
+            treasury: treasury,
+            contribution: CONTRIB,
+            memberCount: N,
+            periodSeconds: PERIOD,
+            windowSeconds: WINDOW,
+            minScore: 0,
+            acceptDefaulted: true,
+            inviteOnly: false
+        });
+        pool = new ROSCAPoolHarness(p);
+        registry.authorizePool(address(pool));
+    }
+
+    function test_JoinSucceedsEvenIfNamingReverts() public {
+        ROSCAPoolHarness pool = _newPoolReverting();
         _fundApprove(pool, alice, COLLATERAL);
         _join(pool, alice);
         assertEq(pool.memberCountJoined(), 1);

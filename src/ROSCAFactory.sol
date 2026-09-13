@@ -120,7 +120,7 @@ contract ROSCAFactory {
         allPools.push(pool);
         isPool[pool] = true;
         registry.authorizePool(pool);
-        naming.registerPool(poolId);
+        try naming.registerPool(poolId) {} catch {}
 
         emit PoolCreated(pool, msg.sender, poolId, cfg);
     }
