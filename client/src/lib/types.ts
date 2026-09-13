@@ -43,6 +43,8 @@ export interface PoolDetail extends PoolSummary {
   windowEndsAt: bigint;
   payoutOrder: readonly number[];
   creator: `0x${string}`;
+  /** collateralReq() — mUSDC each member must post (and have approved) at join time. */
+  collateralReq: bigint;
   members: Member[];
   /** slotOfPlusOne(connectedWallet) — 0 if not a member. */
   mySlotPlusOne: bigint;

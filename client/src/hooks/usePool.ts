@@ -38,6 +38,7 @@ export function usePool(address?: `0x${string}`): {
         { address, abi: poolAbi, functionName: 'getPayoutOrder' },
         { address, abi: poolAbi, functionName: 'poolId' },
         { address, abi: poolAbi, functionName: 'creator' },
+        { address, abi: poolAbi, functionName: 'collateralReq' },
       ] as const;
 
       const detailResults = await client.multicall({ contracts: detailContracts, allowFailure: true });
@@ -58,6 +59,7 @@ export function usePool(address?: `0x${string}`): {
       const payoutOrder = detailResults[8].result as readonly number[];
       const poolId = detailResults[9].result as bigint;
       const creator = detailResults[10].result as `0x${string}`;
+      const collateralReq = detailResults[11].result as bigint;
 
       // 2. Read member data: getMember(slot) for slot 0..memberCount-1.
       let members: Member[] = [];
@@ -136,6 +138,7 @@ export function usePool(address?: `0x${string}`): {
         windowEndsAt,
         payoutOrder,
         creator,
+        collateralReq,
         members,
         mySlotPlusOne,
         iPaidThisRound,
