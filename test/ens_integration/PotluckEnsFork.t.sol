@@ -24,7 +24,6 @@ contract PotluckEnsForkTest is Test {
     address constant ETH_REGISTRAR = 0xa88553F454b77203B0D036A05c894d555EAAa2Cc;
     address constant URV2 = 0x4A1817d13E9cF196f471725176355C1234b63C70;
 
-    uint256 constant ROLE_REGISTRAR = 1 << 0;
     uint256 constant ROLE_SET_SUBREGISTRY = 1 << 20;
     uint256 constant ROLE_SET_RESOLVER = 1 << 24;
     bytes4 constant TEXT_SELECTOR = 0x59d1d43c;

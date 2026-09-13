@@ -65,6 +65,21 @@ contract ReputationResolverTest is Test {
         assertEq(abi.decode(resolver.resolve(_dns(), data), (string)), "");
     }
 
+    /// @dev Fix 1: resolve must return abi.encode("") rather than revert when calldata is
+    ///      too short to be a valid text(bytes32,string) call. Two sub-cases:
+    ///      (a) empty data — less than 4 bytes, selector read reverts
+    ///      (b) selector-only data — valid 4-byte selector but truncated tail (< 100 bytes total),
+    ///          abi.decode of the tail reverts
+    function test_MalformedCalldataReturnsEmpty() public view {
+        // (a) empty calldata
+        bytes memory emptyData = hex"";
+        assertEq(abi.decode(resolver.resolve(_dns(), emptyData), (string)), "");
+
+        // (b) 4-byte selector only — tail is 0 bytes, decode would revert
+        bytes memory selectorOnly = abi.encodePacked(TEXT_SELECTOR);
+        assertEq(abi.decode(resolver.resolve(_dns(), selectorOnly), (string)), "");
+    }
+
     function _dns() internal pure returns (bytes memory) {
         // resolver ignores the name bytes for text(); a non-empty placeholder is fine.
         return hex"00";

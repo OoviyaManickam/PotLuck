@@ -36,12 +36,18 @@ contract ReputationResolver is IExtendedResolver, IERC165 {
             || interfaceId == type(IERC165).interfaceId;
     }
 
+    // Minimum valid text(bytes32,string) payload:
+    //   4 bytes selector + 32 bytes node + 32 bytes offset + 32 bytes string-length = 100 bytes.
+    uint256 internal constant MIN_TEXT_DATA_LEN = 100;
+
     function resolve(bytes calldata, /* name */ bytes calldata data)
         external
         view
         returns (bytes memory)
     {
+        if (data.length < 4) return abi.encode("");
         if (bytes4(data[:4]) != TEXT_SELECTOR) return abi.encode("");
+        if (data.length < MIN_TEXT_DATA_LEN) return abi.encode("");
         (bytes32 node, string memory key) = abi.decode(data[4:], (bytes32, string));
         if (keccak256(bytes(key)) != keccak256(bytes("potluck.reputation"))) return abi.encode("");
 
