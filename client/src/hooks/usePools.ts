@@ -1,7 +1,7 @@
 'use client';
 
 import { usePublicClient } from 'wagmi';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   ADDRESSES,
   FACTORY_DEPLOY_BLOCK,
@@ -71,6 +71,12 @@ export function usePools(): {
     // hammering the RPC.
     staleTime: 60_000,
     gcTime: 5 * 60_000,
+    // Keep the last good result on screen while a refetch runs — notably across
+    // an account switch, which remounts consumers. Without this the grid drops
+    // to a skeleton (showing only the hardcoded samples) until the scan+
+    // multicall complete; with it, known pools stay painted and the fresh data
+    // swaps in when ready.
+    placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: 2,
@@ -100,11 +106,19 @@ export function usePools(): {
         if (pool) cachedAddresses.add(pool.toLowerCase());
       }
 
-      // Only advance the persisted cursor when the whole range scanned
-      // cleanly — otherwise a partial (429'd) scan would let us skip past
-      // blocks we never actually read and permanently miss a pool.
+      // Persist the addresses we've discovered on EVERY run — even a partial
+      // (429'd) scan — so a pool seen once is never lost on the next mount and
+      // reappears instantly on an account switch or reload. The cursor
+      // (lastBlock) is the delicate part: only advance it when the whole range
+      // scanned cleanly, otherwise a partial scan would let us skip past blocks
+      // we never actually read and permanently miss a pool. On an incomplete
+      // scan we keep the previous cursor (or FACTORY_DEPLOY_BLOCK - 1 on a cold
+      // cache) so the next run re-scans the same range.
       if (complete) {
         writeCache({ addresses: [...cachedAddresses], lastBlock: scannedTo.toString() });
+      } else {
+        const prevCursor = cache?.lastBlock ?? (FACTORY_DEPLOY_BLOCK - 1n).toString();
+        writeCache({ addresses: [...cachedAddresses], lastBlock: prevCursor });
       }
 
       const poolAddresses = [...cachedAddresses] as `0x${string}`[];

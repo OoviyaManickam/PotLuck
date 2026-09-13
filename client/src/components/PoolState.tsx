@@ -27,9 +27,18 @@ export function PoolState({ pool }: Props) {
     pot,
     payoutOrder,
     members,
+    mySlotPlusOne,
   } = pool;
 
   const badgeCls = STATUS_BADGE[status] ?? 'bg-surface-2 text-text-muted border-surface-2';
+
+  // The connected wallet's own member record (if they're in this pool), used to
+  // give them personal, plain-language feedback about the last settle: whether
+  // they won the pot this cycle, or missed a contribution and had it covered
+  // from collateral. Both flags reflect on-chain state that updates after the
+  // settle tx confirms and usePool refetches.
+  const mySlot = mySlotPlusOne > 0n ? Number(mySlotPlusOne - 1n) : -1;
+  const me = mySlot >= 0 ? members[mySlot] : undefined;
 
   return (
     <section className="rounded-2xl border border-surface-2 bg-surface p-6 flex flex-col gap-4">
@@ -42,6 +51,39 @@ export function PoolState({ pool }: Props) {
           {statusName(status)}
         </span>
       </div>
+
+      {/* Personal settle-outcome banners — only for the connected member.
+          These appear right after a settle refetch, so a winner learns they
+          got the pot this cycle (not only at COMPLETE), and a defaulter learns
+          their missed contribution was covered from collateral. */}
+      {me?.hasReceivedPot && (
+        <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 flex flex-col gap-1">
+          <p className="text-sm font-semibold text-green-300">
+            🎉 You received the pot this cycle
+          </p>
+          <p className="text-xs text-text-muted">
+            The payout has been sent to your wallet — check your mUSDC balance.
+          </p>
+        </div>
+      )}
+
+      {me?.defaultedThisCycle && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col gap-1">
+          <p className="text-sm font-semibold text-amber-300">
+            ⚠️ You missed a contribution this round
+          </p>
+          <p className="text-xs text-text-muted">
+            It was covered from your collateral. Remaining collateral:{' '}
+            <span className="font-semibold text-text">{formatUsdc(me.collateral)} mUSDC</span>.
+          </p>
+          {!me.active && (
+            <p className="text-xs text-text-muted">
+              You&apos;ve been removed from the active rotation for this cycle — your collateral
+              could no longer cover a round.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">

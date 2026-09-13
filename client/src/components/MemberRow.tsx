@@ -13,9 +13,11 @@ interface Props {
   slot: number;
   /** Pool ID — used for ENS subdomain display. */
   poolId: bigint;
+  /** True when this row is the connected wallet — renders a "You" marker. */
+  isMe?: boolean;
 }
 
-export function MemberRow({ member, slot, poolId }: Props) {
+export function MemberRow({ member, slot, poolId, isMe = false }: Props) {
   const rep = useReputation(member.idKey);
   const client = usePublicClient();
 
@@ -41,7 +43,13 @@ export function MemberRow({ member, slot, poolId }: Props) {
   }, [client, ensLabel]);
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-surface-2 bg-surface hover:bg-surface-2/30 transition-colors">
+    <div
+      className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
+        isMe
+          ? 'border-accent/50 bg-accent/5 hover:bg-accent/10'
+          : 'border-surface-2 bg-surface hover:bg-surface-2/30'
+      }`}
+    >
       {/* Slot badge */}
       <span className="shrink-0 w-7 h-7 rounded-full bg-surface-2 border border-surface-2 flex items-center justify-center text-xs font-semibold text-text-muted">
         {slot}
@@ -49,7 +57,14 @@ export function MemberRow({ member, slot, poolId }: Props) {
 
       {/* Address + ENS */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text truncate">{shortAddr(member.wallet)}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-sm font-semibold text-text truncate">{shortAddr(member.wallet)}</p>
+          {isMe && (
+            <span className="shrink-0 inline-flex items-center rounded-full border border-accent/40 bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+              You
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-xs text-text-muted truncate">{ensLabel}</p>
           {/* ENS live badge — additive enhancement; only shown when live resolution succeeds.

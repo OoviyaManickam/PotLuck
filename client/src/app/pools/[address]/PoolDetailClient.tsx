@@ -97,6 +97,7 @@ function PoolDetailInner({ poolAddr }: { poolAddr: `0x${string}` }) {
                 member={member}
                 slot={slot}
                 poolId={pool.poolId}
+                isMe={pool.mySlotPlusOne > 0n && slot === Number(pool.mySlotPlusOne - 1n)}
               />
             ))}
           </div>
