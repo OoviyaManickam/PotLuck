@@ -38,7 +38,7 @@ export function Navbar() {
         <Link href="/pools" className="hover:text-text transition-colors">
           Pools
         </Link>
-        <Link href="/pools/create" className="hover:text-text transition-colors">
+        <Link href="/pools" className="hover:text-text transition-colors">
           Create Pool
         </Link>
       </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { usePools } from '@/hooks/usePools';
 import { usePool } from '@/hooks/usePool';
@@ -92,69 +93,99 @@ function ReputationDisplay({ idKey }: { idKey: `0x${string}` }) {
 }
 
 /**
- * Scan pools to find the first pool the connected wallet is a member of,
- * and return that pool's address. Used to locate an idKey.
+ * Probes a single pool for the connected wallet's membership.
+ *
+ * Calls usePool unconditionally (hooks-safe: this component always calls its
+ * hooks at the top level regardless of prop values). When the pool loads and
+ * the wallet is found as a member, calls onFound(idKey) via useEffect so the
+ * parent can surface the resolved idKey. Renders null — all display logic
+ * lives in the parent ReputationPoolScanner.
  */
-function useMemberPoolAddress(
-  walletAddress: `0x${string}` | undefined,
-  pools: Array<{ address: `0x${string}` }>
-): `0x${string}` | undefined {
-  // Only scan the first pool if any — in practice we just need ONE idKey.
-  // The first pool address drives the usePool call below.
-  return pools.length > 0 ? pools[0].address : undefined;
-}
-
-/**
- * Sub-component that uses usePool for a specific pool to find the user's idKey.
- * Rendered only when a pool address is available.
- */
-function ReputationFromPool({
+function PoolMembershipProbe({
   poolAddress,
   walletAddress,
+  onFound,
 }: {
   poolAddress: `0x${string}`;
   walletAddress: `0x${string}`;
+  onFound: (idKey: `0x${string}`) => void;
 }) {
   const { pool, isLoading } = usePool(poolAddress);
 
-  if (isLoading) {
-    return (
-      <div className="animate-pulse space-y-2">
-        <div className="h-5 w-24 rounded bg-surface-2" />
-        <div className="h-2 w-full rounded bg-surface-2" />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (isLoading || !pool) return;
 
-  if (!pool) {
-    return (
-      <p className="text-sm text-text-muted">Could not load pool data.</p>
-    );
-  }
+    // Primary membership signal: mySlotPlusOne > 0 means the connected wallet
+    // is in this pool. Then locate the Member record to get its idKey.
+    if (pool.mySlotPlusOne > 0n) {
+      const member = pool.members.find(
+        (m) => m.wallet.toLowerCase() === walletAddress.toLowerCase()
+      );
+      if (member) {
+        onFound(member.idKey);
+      }
+    }
+  }, [isLoading, pool, walletAddress, onFound]);
 
-  // Find the connected wallet in this pool's member list.
-  const member = pool.members.find(
-    (m) => m.wallet.toLowerCase() === walletAddress.toLowerCase()
+  // This component is probe-only; it renders nothing itself.
+  return null;
+}
+
+/**
+ * Renders one PoolMembershipProbe per pool (each calls usePool unconditionally
+ * at its own top level — hooks-safe). Tracks the resolved idKey via state.
+ * Shows ReputationDisplay once a match is found, a loading skeleton while any
+ * pool is still loading, or the empty state when all pools resolve without a
+ * match.
+ */
+function ReputationPoolScanner({
+  pools,
+  walletAddress,
+}: {
+  pools: Array<{ address: `0x${string}` }>;
+  walletAddress: `0x${string}`;
+}) {
+  const [foundIdKey, setFoundIdKey] = useState<`0x${string}` | null>(null);
+
+  // Stable callback — won't retrigger probes unnecessarily.
+  // We use a closure that ignores repeat calls once an idKey is found.
+  const handleFound = (idKey: `0x${string}`) => {
+    setFoundIdKey((prev) => prev ?? idKey);
+  };
+
+  return (
+    <>
+      {/* Render one probe per pool; each calls usePool unconditionally. */}
+      {pools.map((p) => (
+        <PoolMembershipProbe
+          key={p.address}
+          poolAddress={p.address}
+          walletAddress={walletAddress}
+          onFound={handleFound}
+        />
+      ))}
+
+      {/* Display layer — driven entirely by foundIdKey state. */}
+      {foundIdKey ? (
+        <ReputationDisplay idKey={foundIdKey} />
+      ) : (
+        <p className="text-sm text-text-muted">
+          Join a pool to build your on-chain reputation.
+        </p>
+      )}
+    </>
   );
-
-  if (!member) {
-    return (
-      <p className="text-sm text-text-muted">
-        Join a pool to build your on-chain reputation.
-      </p>
-    );
-  }
-
-  return <ReputationDisplay idKey={member.idKey} />;
 }
 
 /**
  * ReputationCard — shows the connected wallet's reputation tier, cleanCycles,
  * and default status.
  *
- * idKey is derived by scanning usePools() and finding the user in any pool
- * via getMember(slot).idKey from usePool(). If the user is not in any pool,
- * shows an empty state.
+ * idKey is derived by scanning ALL real pools (not just index 0) and finding
+ * the first one where the connected wallet is a member. One PoolMembershipProbe
+ * subcomponent is rendered per pool; each calls usePool exactly once at its own
+ * top level (hooks-safe). The empty state is shown only when the wallet is in
+ * NO pool.
  */
 export function ReputationCard() {
   const { address } = useAccount();
@@ -180,8 +211,6 @@ export function ReputationCard() {
   // Filter to pools that actually exist (non-sample).
   const realPools = pools.filter((p) => !p.isSample);
 
-  const firstPoolAddress = useMemberPoolAddress(address, realPools);
-
   return (
     <div className="rounded-2xl border border-surface-2 bg-surface p-6 space-y-4">
       <div>
@@ -189,15 +218,15 @@ export function ReputationCard() {
         <p className="text-xs text-text-muted mt-0.5">{shortAddr(address)}</p>
       </div>
 
-      {firstPoolAddress ? (
-        <ReputationFromPool
-          poolAddress={firstPoolAddress}
-          walletAddress={address}
-        />
-      ) : (
+      {realPools.length === 0 ? (
         <p className="text-sm text-text-muted">
           Join a pool to build your on-chain reputation.
         </p>
+      ) : (
+        <ReputationPoolScanner
+          pools={realPools}
+          walletAddress={address}
+        />
       )}
     </div>
   );
